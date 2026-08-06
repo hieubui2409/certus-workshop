@@ -38,7 +38,14 @@ async def analyze_stream(req: AnalyzeRequest, principal=Depends(needs("probe:run
 
     async def gen():
         async for ev in pipe.run(req):
-            if ev.kind == "step" and ev.payload.get("name") == "explain":
+            # Bước `explain` phát HAI lần: `status="running"` (chưa có response)
+            # rồi `status="done"` (có response). Chỉ lần sau mới mang response —
+            # thiếu guard này thì lần "running" gây KeyError và sập cả stream.
+            if (
+                ev.kind == "step"
+                and ev.payload.get("name") == "explain"
+                and "response" in ev.payload
+            ):
                 resp = AnalyzeResponse.model_validate(ev.payload["response"])
                 _RUNS[resp.run_id] = resp
             yield {"event": ev.kind, "data": json.dumps(ev.wire_data(), ensure_ascii=False)}

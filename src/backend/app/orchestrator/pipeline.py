@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import re
 import time
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -142,6 +142,121 @@ def discover_axes(root: Path) -> Axes:
                 axes.values[axis] = members
                 axes.source[axis] = f"{py.relative_to(root)}::{node.name}"
     return axes
+
+
+def restrict_axes(axes: Axes, confirmed: Mapping[str, Sequence[str]]) -> Axes:
+    """Thu hẹp trục KHÁM PHÁ ĐƯỢC xuống tập người dùng XÁC NHẬN (HITL).
+
+    Chỉ giữ trục nằm trong CẢ hai (khám phá ∩ xác nhận): người dùng CHỌN trong
+    số trục code đã suy ra, KHÔNG thêm được trục không có Enum nào đứng sau — mẫu
+    số phải neo vào code, đó là lý do `discover_axes` không hỏi mô hình. Với mỗi
+    trục giữ lại, lọc member theo danh sách xác nhận nhưng GIỮ THỨ TỰ KHÁM PHÁ
+    (axis-lock ổn định); danh sách rỗng ⇒ giữ mọi member. Trục còn dưới 2 giá trị
+    bị bỏ hẳn — một trục một-giá-trị không phân biệt được gì, giữ lại chỉ làm hỏng
+    phép đếm t-wise. `source` ghi thêm 'human-confirmed' để cổng phân biệt trục đã
+    qua HITL với trục thô.
+    """
+    out = Axes()
+    for axis, members in axes.values.items():
+        if axis not in confirmed:
+            continue
+        want = list(confirmed[axis])
+        kept = [m for m in members if m in want] if want else list(members)
+        if len(kept) < 2:
+            continue
+        out.values[axis] = kept
+        out.source[axis] = f"human-confirmed · {axes.source.get(axis, '?')}"
+    return out
+
+
+def select_axes(
+    discovered: Axes,
+    rules: Sequence[Mapping[str, Any]],
+    *,
+    confirmed_axes: Mapping[str, Sequence[str]] | None = None,
+    candidates: Sequence[Any] | None = None,
+) -> tuple[Axes, dict[str, Any]]:
+    """Chọn tập trục bằng engine ToT (đề xuất → admit → beam), THAY discover-giữ-hết.
+
+    Ba nhánh, đúng một chạy:
+    - `confirmed_axes` có ⇒ NGƯỜI đã chốt (HITL): thu hẹp UNIVERSE ứng viên về đúng
+      lựa chọn của họ. Ý người thắng beam.
+    - ngược lại chạy beam ρ trên ứng viên; admit loại `asserted` (branch) khỏi default,
+      giữ `retrieved`/`derived`. Beam tỉa nhiễu ở đâu zones có tín hiệu.
+    - SÀN VIABILITY: beam lock < 2 trục (zones không mã hoá rủi ro repo này → ρ=0)
+      ⇒ rơi về TẬP ENUM khám phá (mẫu số sạch nhất, không rơi về branch asserted).
+
+    `candidates`: tập ứng viên ĐA NGUỒN (enum+config+branch — `axis_sources`). None ⇒
+    chỉ Enum, dựng từ `discovered` — đường REPO MẪU: universe = discovered nên axis_lock/
+    cell_id y hệt baseline → cassette/golden bất biến. Có ⇒ đường REPO THẬT.
+
+    LUÔN dựng lại theo THỨ TỰ candidate (enum→config→branch); Enum-only ⇒ thứ tự này
+    trùng thứ tự khám phá, nên repo có tập trục không đổi ra cell_id y hệt.
+    """
+    from app.core.grid.axis_admit import AxisCandidate, load_admit_config
+    from app.core.grid.axis_score import load_search_params
+    from app.core.grid.axis_search import search_axes
+
+    # Enum-only mặc định: MỘT nguồn sự thật cho tập Enum + thứ tự khám phá.
+    if candidates is None:
+        candidates = [
+            AxisCandidate(
+                name=n, members=tuple(v), ref=discovered.source.get(n, "?"),
+                tier="retrieved", origin="enum",
+            )
+            for n, v in discovered.values.items()
+        ]
+
+    # Universe = mọi ứng viên dựng thành Axes theo thứ tự candidate. HITL thu hẹp trên
+    # ĐÂY (không chỉ Enum) nên người dùng chốt được cả trục config/branch.
+    universe = Axes()
+    for c in candidates:
+        universe.values[c.name] = list(c.members)
+        universe.source[c.name] = c.ref
+
+    if confirmed_axes is not None:
+        axes = restrict_axes(universe, confirmed_axes)
+        return axes, {"engine": "hitl", "quarantined": [], "rejected": []}
+
+    result = search_axes(
+        candidates, fixed_axes={}, rules=rules,
+        params=load_search_params(), admit_config=load_admit_config(),
+    )
+    locked = set(result.locked_axes)
+    floored = len(locked) < 2
+    if floored:
+        locked = set(discovered.values)
+
+    axes = Axes()
+    order: Sequence[tuple[str, Sequence[str]]] = (
+        list(discovered.values.items()) if floored
+        else [(c.name, c.members) for c in candidates]
+    )
+    for name, members in order:
+        if name in locked and name not in axes.values:
+            axes.values[name] = list(members)
+            axes.source[name] = universe.source.get(name, discovered.source.get(name, "?"))
+    meta = {
+        "engine": "floor" if floored else "tot",
+        "quarantined": [q.axis for q in result.quarantined],
+        "rejected": [{"axis": a, "reason": r} for a, r in result.rejected],
+    }
+    return axes, meta
+
+
+def candidates_for(root: Path, discovered: Axes, *, is_sample: bool) -> list[Any] | None:
+    """Ứng viên đa nguồn cho REPO THẬT; None cho REPO MẪU.
+
+    Repo mẫu (`req.target`, dưới targets_dir) phải ra tập trục y HỆT baseline để
+    cassette/golden bất biến — nên KHÔNG bơm config/branch, giữ Enum-only. Repo thật
+    (`req.upload_id`, dưới workspace_dir) bật đa nguồn để engine + HITL có gì mà tỉa;
+    repo thật KHÔNG có cassette (chạy live) nên đổi tập trục không phá gì.
+    """
+    if is_sample:
+        return None
+    from app.core.grid.axis_sources import propose_candidates
+
+    return propose_candidates(root, discovered.values, discovered.source)
 
 
 # --------------------------------------------------------------------------
@@ -396,6 +511,17 @@ class Pipeline:
         root = self.resolve_target(req)
         yield self._step(trace_id, "resolve_target", path=str(root))
 
+        # Repo THẬT (upload) phải qua bước chọn trục. Proposer đa nguồn trên repo lạ
+        # thường floor về rất nhiều trục Enum (zones là của repo mẫu), auto-analyze sẽ
+        # nổ cartesian và mọi con số grid vô nghĩa. Buộc HITL: người chốt 2–4 trục qua
+        # /axes/discover rồi gửi confirmed_axes. Repo mẫu (target) miễn — trục cố định.
+        if req.upload_id and not req.confirmed_axes:
+            raise CertusError(
+                "repo tải lên phải CHỌN TRỤC trước khi phân tích: gọi "
+                "/api/axes/discover, chốt 2–4 trục rồi gửi lại kèm confirmed_axes. "
+                "(Repo mẫu thì không cần — trục đã cố định để bài giảng tất định.)"
+            )
+
         # Chính sách dữ liệu chạy TRƯỚC mọi thứ chạm tới mô hình.
         policy = load_policy()
         sent, held = [], {}
@@ -410,22 +536,40 @@ class Pipeline:
             files_sent=len(sent), files_held=len(held),
         )
 
-        axes = discover_axes(root)
-        yield self._step(
-            trace_id, "discover_axes",
-            axes={k: len(v) for k, v in axes.values.items()}, source=axes.source,
-        )
-
         # load_zone_config đã compile sẵn — không ai được cầm rules chưa compile.
+        # Nạp TRƯỚC chọn trục: engine ρ cần rules zone để chấm mật độ rủi ro.
         zone_cfg = load_zone_config()
         blocking_w = zone_cfg.blocking_w
         cfg_zones = zone_cfg.rules
+
+        # Chọn trục bằng engine ToT (thay discover-giữ-hết). `confirmed_axes` (nếu
+        # có) là ý NGƯỜI sau khi xem đề xuất — thắng beam. Không có ⇒ beam ρ + sàn
+        # viability. select_axes giữ THỨ TỰ KHÁM PHÁ nên repo có tập trục không đổi
+        # (mọi repo mẫu hiện tại) ra cell_id y hệt → cassette/golden bất biến.
+        discovered = discover_axes(root)
+        candidates = candidates_for(root, discovered, is_sample=bool(req.target))
+        axes, axis_meta = select_axes(
+            discovered, cfg_zones, confirmed_axes=req.confirmed_axes, candidates=candidates
+        )
+        yield self._step(
+            trace_id, "discover_axes",
+            axes={k: len(v) for k, v in axes.values.items()},
+            source=axes.source, **axis_meta,
+        )
         tests = scan_tests(root)
         suite_exit, cov_suite, (lines_hit, lines_total) = run_target_suite(root)
         yield self._step(
             trace_id, "run_tests",
             test_functions=len(tests), exit_code=suite_exit,
             lines_covered=len(cov_suite),
+            lines_hit=lines_hit, lines_total=lines_total,
+        )
+        # `read_coverage` là bước 5 trong STAGES. Nó gộp VẬT LÝ vào run_tests (cùng
+        # một `run_target_suite`), nhưng vẫn phát THÀNH bước riêng — nếu không, sidebar
+        # hiện "chưa chạy" cho một bước thực sự đã chạy, đúng cái nhầm mà StepProgress
+        # được viết ra để tránh.
+        yield self._step(
+            trace_id, "read_coverage",
             lines_hit=lines_hit, lines_total=lines_total,
         )
         obs_table = observations_for_cells(
@@ -530,6 +674,11 @@ class Pipeline:
                 system=system,
                 messages=[{"role": "user", "content": prompt}],
                 cassette_hint="analyze",
+                # Mồi `{` để ép mọi model (kể cả Haiku yếu) tiếp nối thành đúng
+                # object JSON như "Định dạng trả lời" đòi, thay vì đáp văn xuôi rồi
+                # rớt về cảnh báo "không đọc được câu trả lời". Chỉ tác động đường
+                # API thật; mock/cassette của lớp không đổi khoá.
+                prefill="{",
             )
             for chunk in resp.chunks or ([resp.text] if resp.text else []):
                 yield self._event("token", trace_id, text=chunk)
@@ -573,7 +722,7 @@ class Pipeline:
             span.finish(status="error", error=type(exc).__name__)
             llm_warnings.append(f"không đọc được câu trả lời của mô hình: {exc}")
         tracing.emit(span)
-        yield self._event("span", trace_id, span=span.to_row().model_dump(mode="json"))
+        yield self._event("span", trace_id, span=span.to_row().to_sse())
         for c in claims:
             yield self._event("claim", trace_id, claim=c.model_dump(mode="json"))
 
@@ -590,7 +739,25 @@ class Pipeline:
             )
         blocked = bool(blocking_failures)
         verdict = "blocked" if blocked else ("pass" if claims else "inconclusive")
+        # `run_gates` là bước 8 trong STAGES: chuỗi cổng sàn per-zone vừa chạy ở
+        # trên. Trước đây nó chỉ phát sự kiện `gate` cho từng zone mà KHÔNG phát
+        # `step`, nên sidebar hiện bước 8 "chưa chạy" dù cổng đã chấm.
+        yield self._step(
+            trace_id, "run_gates",
+            zones=len(floor_verdicts),
+            blocking_failures=len(blocking_failures),
+            verdict=verdict,
+        )
 
+        # Cảnh báo giữ tệp phải NÊU RÕ tệp nào — "1 tệp bị giữ lại" không cho người
+        # đọc biết gì để đối chiếu với danh sách "đã gửi". `held` là {đường-dẫn:
+        # lý-do}; liệt kê đường dẫn (kèm lý do khi đủ chỗ).
+        held_warning = (
+            f"{len(held)} tệp bị giữ lại theo chính sách dữ liệu: "
+            + "; ".join(f"{p} ({r})" for p, r in sorted(held.items()))
+            if held
+            else None
+        )
         response = AnalyzeResponse(
             run_id=trace_id,
             trace_id=trace_id,
@@ -600,10 +767,7 @@ class Pipeline:
             gates=[],
             verdict=verdict,
             files_sent_to_model=sent,
-            warnings=(
-                ([f"{len(held)} tệp bị giữ lại theo chính sách dữ liệu"] if held else [])
-                + llm_warnings
-            ),
+            warnings=([held_warning] if held_warning else []) + llm_warnings,
         )
         # Cảnh báo phải ra thành sự kiện riêng, không nằm lẫn trong response —
         # hợp đồng bắt mỗi cảnh báo hiện thành một DÒNG CHỮ trên UI, và một
@@ -613,8 +777,14 @@ class Pipeline:
                 "warning", trace_id, code=flag,
                 msg=_WARNING_TEXT.get(flag, flag),
             )
-        for w in response.warnings:
-            yield self._event("warning", trace_id, code="data-policy", msg=w)
+        # Hai NGUỒN cảnh báo khác hẳn nhau, KHÔNG gộp chung mã: giữ tệp là chuyện
+        # chính sách dữ liệu; còn "mô hình trả sai định dạng / nonce lệch / claim
+        # dị dạng" là chuyện của bước diễn giải. Gắn `data-policy` cho nhóm sau thì
+        # UI in nhầm tiêu đề "đã giữ tệp" lên một lỗi output của mô hình.
+        if held_warning:
+            yield self._event("warning", trace_id, code="data-policy", msg=held_warning)
+        for w in llm_warnings:
+            yield self._event("warning", trace_id, code="llm-output", msg=w)
 
         yield self._step(trace_id, "explain", response=response.model_dump(mode="json"))
 

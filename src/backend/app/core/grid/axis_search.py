@@ -1,329 +1,189 @@
-"""ToT beam/prune — lần Tree-of-Thoughts DUY NHẤT trong cả pipeline.
+"""ToT beam/prune chọn TẬP trục động — bản CERTUS tractable của axis_search.py.
 
-Không gian tìm kiếm là một LATTICE, không phải cây: node là TẬP (frozenset) tên
-trục động đã khoá vào. Tới cùng một tập bằng hai thứ tự chèn khác nhau (a→b→c và
-c→a→b) là CÙNG một node, thăm đúng một lần. `visited` là thứ cưỡng chế điều đó —
-bỏ nó đi thì cùng một tập bị chấm nhiều lần và beam đầy bản sao của chính nó.
+Không gian tìm: một node là TẬP (frozenset) tên trục đã khoá — một LATTICE, không
+phải cây (tới cùng một tập qua hai thứ tự chèn khác nhau là CÙNG node, thăm một
+lần). Mô hình chỉ ĐỀ XUẤT ứng viên (đã qua `admit_axis`); mọi quyết định chấm điểm
+là `axis_score.marginal_risk_density` (ρ), không bao giờ tự cài lại ở đây.
 
-Neo tài liệu: research note 02 §5.2.
+Luật trung tâm: thêm một trục khi ρ(node, trục) ≥ θ. Trục có ρ < θ là *dominated*
+— nó vào QUARANTINE kèm `revisit_if`, KHÔNG bị xoá. Cuối mỗi vòng, mọi trục đang
+quarantine được chấm lại ρ với node tốt nhất vòng đó; nếu giờ ≥ θ thì HỒI SINH.
+Drop lặng một trục = một blindspot GIẢ trong báo cáo người đọc để quyết ship.
+
+Progressive widening: rộng (`shallow_width`) ở nông, hẹp (`deep_width`) khi sâu.
+Trần cứng: `m_cap` trục động, `max_nodes` node thăm. Lịch nằm ở config, không phải
+hằng số (grid.yaml::search).
 """
 
 from __future__ import annotations
 
-import time
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
 
-from app.contracts.errors import DegenerateMarginalError
-from app.core.grid.score import (
+from app.core.grid.axis_admit import AdmitConfig, AxisCandidate, admit_axis
+from app.core.grid.axis_score import (
+    DegenerateMarginalError,
     SearchParams,
-    cells_of,
+    is_dominated,
     marginal_risk_density,
-    value_of,
+    value,
 )
 from app.core.grid.zones import Zone
 
-Node = dict[str, Any]  # {"dynamic": frozenset[str], "value": float, "cells": int}
+__all__ = ["QuarantineRecord", "SearchResult", "search_axes"]
 
 
-# ─────────────────────── progressive widening & budget ───────────────────────
+@dataclass(frozen=True)
+class QuarantineRecord:
+    """Một trục bị coi dominated ở một tập nền cụ thể. `revisit_if` LÀ điều kiện
+    hồi sinh, không phải trang trí: chấm lại ρ với node tốt nhất, ≥ θ_lưu thì
+    revive. θ lưu TRÊN record (không phải θ hiện tại) để điều kiện ổn định."""
 
-
-def beam_width_for_depth(
-    depth: int, *, shallow_width: int, deep_width: int, shallow_depth_limit: int
-) -> int:
-    """Rộng ở nông, hẹp khi đã sâu — lịch nằm ở config, không bao giờ là hằng số
-    trong harness."""
-    return shallow_width if depth < shallow_depth_limit else deep_width
-
-
-def select_beam(children: Sequence[Node], *, width: int) -> list[Node]:
-    """Thứ tự toàn phần và tất định: value giảm dần, hoà thì so tuple tên trục
-    tăng dần.
-
-    Tie-break bằng tên là bắt buộc chứ không phải cho đẹp: hai node cùng value mà
-    thứ tự phụ thuộc thứ tự chèn của dict thì hai lượt chạy cùng input cho hai
-    kết quả khác nhau, và mọi so sánh trước/sau sau đó đều vô nghĩa.
-    """
-    return sorted(
-        children, key=lambda c: (-float(c["value"]), tuple(sorted(c["dynamic"])))
-    )[: max(width, 0)]
-
-
-def check_budget(
-    *,
-    elapsed_s: float,
-    max_wall_clock_s: float,
-    nodes_expanded: int,
-    max_nodes: int,
-    tokens_used: int,
-    max_tokens_total: int,
-) -> str | None:
-    """Tên của cap ĐẦU TIÊN chạm/vượt trần, theo thứ tự cố định
-    (wall-clock → nodes → tokens), hoặc None.
-
-    `cap <= 0` nghĩa là KHÔNG ÁP, không phải "đã cạn" — đọc nhầm chiều đó biến
-    một trần chưa cấu hình thành một lần dừng ngay lập tức, và lượt chạy rỗng
-    đó đọc y hệt một lượt chạy hội tụ nhanh.
-    """
-    if max_wall_clock_s > 0 and elapsed_s >= max_wall_clock_s:
-        return "wall_clock"
-    if max_nodes > 0 and nodes_expanded >= max_nodes:
-        return "nodes"
-    if max_tokens_total > 0 and tokens_used >= max_tokens_total:
-        return "tokens"
-    return None
-
-
-def budget_used_fraction(
-    *,
-    elapsed_s: float,
-    max_wall_clock_s: float,
-    nodes_expanded: int,
-    max_nodes: int,
-    tokens_used: int,
-    max_tokens_total: int,
-) -> float:
-    """MAX tỉ lệ đã dùng trên ba cap — cái nào gần cạn nhất thì cái đó lái việc
-    thu beam. Trung bình ba cap sẽ giấu đúng cái sắp chạm trần."""
-    fractions = [
-        elapsed_s / max_wall_clock_s if max_wall_clock_s > 0 else 0.0,
-        nodes_expanded / max_nodes if max_nodes > 0 else 0.0,
-        tokens_used / max_tokens_total if max_tokens_total > 0 else 0.0,
-    ]
-    return max(fractions)
-
-
-def resolve_beam_width(
-    depth: int,
-    *,
-    shallow_width: int,
-    deep_width: int,
-    shallow_depth_limit: int,
-    used_fraction: float,
-    greedy_threshold_fraction: float,
-) -> int:
-    """Vượt ngưỡng greedy thì beam thu về ĐÚNG MỘT, BẤT KỂ lịch độ sâu — chế độ
-    greedy anytime, giữ nguyên best-so-far."""
-    if used_fraction >= greedy_threshold_fraction:
-        return 1
-    return beam_width_for_depth(
-        depth,
-        shallow_width=shallow_width,
-        deep_width=deep_width,
-        shallow_depth_limit=shallow_depth_limit,
-    )
-
-
-# ─────────────────────── quarantine, không bao giờ xoá ───────────────────────
+    axis: str
+    members: tuple[str, ...]
+    rho: float
+    theta: float
+    base_axes: tuple[str, ...]
+    revisit_if: str = "rho_vs_best_node >= theta"
 
 
 @dataclass
-class QuarantineRecord:
-    """Một trục bị coi là dominated. KHÔNG bị xoá — bị CÁCH LY.
-
-    `revisit_if` là điều kiện hồi sinh và nó LOAD-BEARING, không phải trang trí:
-    cuối mỗi vòng, ρ được tính lại với node tốt nhất vòng đó, rồi điều kiện được
-    ĐỌC RA KHỎI BẢN GHI và đem đối chiếu.
-    """
-
-    axis: str
-    rho_at_quarantine: float
-    theta: float
-    round_index: int
-    revisit_if: dict[str, Any]
-    revived_at_round: int | None = None
-    history: list[str] = field(default_factory=list)
+class SearchResult:
+    locked_axes: dict[str, list[str]]
+    quarantined: list[QuarantineRecord] = field(default_factory=list)
+    rejected: list[tuple[str, str]] = field(default_factory=list)  # (axis, admit reason)
+    rounds: int = 0
+    nodes_visited: int = 0
+    stop_reason: str = ""
 
 
-#: Các loại điều kiện mà BẢN BUILD NÀY tự kiểm lại được. Mọi loại khác không phải
-#: "chưa biết đúng hay sai" — nó là KHÔNG KIỂM ĐƯỢC, và xem §5.2 của note 02.
-_CHECKABLE_CONDITIONS = frozenset({"rho_above"})
+def _dynamic_names(axes: Mapping[str, Sequence[str]], fixed: Sequence[str]) -> list[str]:
+    return [n for n in axes if n not in fixed]
 
 
-def revisit_verdict(
-    record: QuarantineRecord, *, rho_now: float | None
-) -> tuple[bool, str]:
-    """Điều kiện hồi sinh đã thoả chưa?
-
-    LUẬT: một điều kiện mà bản build này KHÔNG TỰ KIỂM LẠI ĐƯỢC thì KHÔNG BAO GIỜ
-    được coi là đã thoả. Nó CHẶN việc hồi sinh, chứ không rơi tự do qua thành
-    "thoả" — vì mặc định rơi-qua biến mọi điều kiện viết ẩu thành một cửa mở.
-    """
-    condition = record.revisit_if or {}
-    kind = str(condition.get("type", ""))
-    if kind not in _CHECKABLE_CONDITIONS:
-        return False, f"điều kiện {kind!r} không kiểm lại được ⇒ giữ nguyên cách ly"
-    if rho_now is None:
-        return False, "ρ không tính được ở vòng này ⇒ giữ nguyên cách ly"
-    threshold = float(condition["threshold"])
-    if rho_now >= threshold:
-        return True, f"ρ={rho_now:.6f} >= {threshold}"
-    return False, f"ρ={rho_now:.6f} < {threshold}"
-
-
-# ─────────────────────────────── beam search ───────────────────────────────
-
-
-def _node(
-    axes: Mapping[str, Sequence[str]], dynamic: frozenset[str], rules: Sequence[Zone]
-) -> Node:
-    return {
-        "dynamic": dynamic,
-        "value": value_of(axes, dynamic, rules),
-        "cells": cells_of(axes, dynamic),
-    }
-
-
-def beam_search(
-    axes: Mapping[str, Sequence[str]],
-    rules: Sequence[Zone],
+def search_axes(
+    candidates: Sequence[AxisCandidate],
     *,
+    fixed_axes: Mapping[str, Sequence[str]],
+    rules: Sequence[Zone],
     params: SearchParams,
-    candidates: Iterable[str] | None = None,
-    seed: Iterable[str] = (),
-    tokens_used: Callable[[], int] = lambda: 0,
-    clock: Callable[[], float] = time.monotonic,
-) -> dict[str, Any]:
-    """Chạy beam trên lattice và trả về best node + toàn bộ sổ cách ly.
+    admit_config: AdmitConfig,
+) -> SearchResult:
+    """Chọn tập trục động thêm vào `fixed_axes` để tối đa khối rủi ro trên mỗi ô mới.
 
-    Trả về cả `stop_reason`: một lượt dừng vì chạm trần budget KHÔNG được đọc
-    giống một lượt dừng vì hết node để mở.
+    Trả về `locked_axes` = fixed ⊕ dynamic đã chọn (đây là cái LOCK — từ đây xuống
+    mọi thứ tất định), kèm danh sách quarantine (trục bị loại tạm) và rejected
+    (trục cổng admit từ chối hẳn, kèm lý do).
     """
-    pool = list(candidates) if candidates is not None else list(axes.keys())
-    start = clock()
-    nodes_expanded = 0
+    fixed_names = list(fixed_axes)
+    base: dict[str, list[str]] = {k: list(v) for k, v in fixed_axes.items()}
 
-    root = _node(axes, frozenset(seed), rules)
-    visited: set[frozenset[str]] = {root["dynamic"]}
-    beam: list[Node] = [root]
-    best: Node = root
-    quarantine: list[QuarantineRecord] = []
-    stop_reason: str | None = None
-    round_index = 0
+    # Ứng viên còn sống (chưa nhận, chưa loại-hẳn). Quarantine là một pool RIÊNG có
+    # thể hồi sinh vào lại đây.
+    result = SearchResult(locked_axes=dict(base))
+    pool: list[AxisCandidate] = list(candidates)
+    quarantine: dict[str, QuarantineRecord] = {}
 
-    while beam and stop_reason is None:
-        round_index += 1
-        children: list[Node] = []
+    # Frontier: danh sách (axes_dict, frozenset_names). Bắt đầu từ node nền.
+    frontier: list[dict[str, list[str]]] = [dict(base)]
+    visited: set[frozenset[str]] = {frozenset(base)}
+    best = dict(base)
+    depth = 0
 
-        for parent in beam:
-            depth = len(parent["dynamic"])
-            if depth >= params.max_dynamic_axes:
+    while True:
+        if result.nodes_visited >= params.max_nodes:
+            result.stop_reason = "max_nodes"
+            break
+        width = params.shallow_width if depth <= params.shallow_depth_limit else params.deep_width
+
+        # Sinh mọi mở rộng hợp lệ từ frontier.
+        expansions: list[tuple[float, dict[str, list[str]]]] = []
+        for node in frontier:
+            result.nodes_visited += 1
+            dyn = _dynamic_names(node, fixed_names)
+            if len(dyn) >= params.m_cap:
                 continue
-            for axis in pool:
-                if axis in parent["dynamic"]:
+            for cand in pool:
+                if cand.name in node:
                     continue
-                child_set = frozenset(parent["dynamic"] | {axis})
-                if child_set in visited:
-                    # Cùng một TẬP tới bằng thứ tự khác — cùng node, thăm một lần.
-                    continue
-
-                stop_reason = check_budget(
-                    elapsed_s=clock() - start,
-                    max_wall_clock_s=params.max_wall_clock_s,
-                    nodes_expanded=nodes_expanded,
-                    max_nodes=params.max_nodes,
-                    tokens_used=tokens_used(),
-                    max_tokens_total=params.max_tokens_total,
+                adm = admit_axis(
+                    cand, already_admitted=dyn, fixed_axes=fixed_names, config=admit_config
                 )
-                if stop_reason is not None:
-                    break
-
-                rho = _rho_or_none(axes, parent["dynamic"], axis, rules, params)
-                visited.add(child_set)
-                nodes_expanded += 1
-
-                if rho is None or rho < params.theta_dominated:
-                    quarantine.append(
-                        QuarantineRecord(
-                            axis=axis,
-                            rho_at_quarantine=float("nan") if rho is None else rho,
-                            theta=params.theta_dominated,
-                            round_index=round_index,
-                            revisit_if={
-                                "type": "rho_above",
-                                "threshold": params.theta_dominated,
-                            },
-                        )
+                if not adm.accepted:
+                    pair = (cand.name, adm.reason or "rejected")
+                    if pair not in result.rejected:
+                        result.rejected.append(pair)
+                    continue
+                try:
+                    rho = marginal_risk_density(
+                        node, cand.name, cand.members, rules, epsilon=params.epsilon
+                    )
+                except DegenerateMarginalError:
+                    # Thêm trục không tạo ô mới (đơn trị trong ngữ cảnh này) — coi như
+                    # loại hẳn, không quarantine: không có gì để hồi sinh.
+                    pair = (cand.name, "degenerate_marginal")
+                    if pair not in result.rejected:
+                        result.rejected.append(pair)
+                    continue
+                if is_dominated(rho, theta=params.theta):
+                    quarantine[cand.name] = QuarantineRecord(
+                        axis=cand.name, members=tuple(cand.members), rho=rho,
+                        theta=params.theta, base_axes=tuple(sorted(node)),
                     )
                     continue
+                new_axes = {**node, cand.name: list(cand.members)}
+                key = frozenset(new_axes)
+                if key in visited:
+                    continue
+                expansions.append((rho, new_axes))
 
-                children.append(_node(axes, child_set, rules))
-            if stop_reason is not None:
-                break
+        # Quarantine ⇔ pool: loại trục đã quarantine khỏi pool vòng sau (tránh thử lại
+        # vô hạn), giữ record để hồi sinh.
+        pool = [c for c in pool if c.name not in quarantine]
 
-        if not children:
+        if not expansions:
+            result.stop_reason = result.stop_reason or "converged"
             break
 
-        depth = min(len(c["dynamic"]) for c in children)
-        width = resolve_beam_width(
-            depth,
-            shallow_width=params.shallow_width,
-            deep_width=params.deep_width,
-            shallow_depth_limit=params.shallow_depth_limit,
-            used_fraction=budget_used_fraction(
-                elapsed_s=clock() - start,
-                max_wall_clock_s=params.max_wall_clock_s,
-                nodes_expanded=nodes_expanded,
-                max_nodes=params.max_nodes,
-                tokens_used=tokens_used(),
-                max_tokens_total=params.max_tokens_total,
-            ),
-            greedy_threshold_fraction=params.greedy_threshold_fraction,
-        )
-        beam = select_beam(children, width=width)
-        if beam and beam[0]["value"] > best["value"]:
-            best = beam[0]
+        # Xếp theo ρ giảm dần, chốt visited, lấy top-width.
+        expansions.sort(key=lambda e: e[0], reverse=True)
+        chosen: list[dict[str, list[str]]] = []
+        for _rho, axes in expansions:
+            key = frozenset(axes)
+            if key in visited:
+                continue
+            visited.add(key)
+            chosen.append(axes)
+            if len(chosen) >= width:
+                break
 
-        _sweep_quarantine(axes, rules, params, quarantine, best, round_index)
+        frontier = chosen
+        # best = node có V lớn nhất từng thấy (khối rủi ro cao nhất).
+        for axes in chosen:
+            if value(axes, rules) > value(best, rules):
+                best = axes
+        depth += 1
+        result.rounds += 1
 
-    return {
-        "best": best,
-        "visited": len(visited),
-        "nodes_expanded": nodes_expanded,
-        "rounds": round_index,
-        "quarantine": quarantine,
-        "stop_reason": stop_reason,
-    }
+        # Hồi sinh: chấm lại mọi trục quarantine với node tốt nhất; ≥ θ_lưu thì revive.
+        revived: list[str] = []
+        for name, rec in list(quarantine.items()):
+            if rec.axis in best:
+                continue
+            try:
+                rho2 = marginal_risk_density(
+                    best, rec.axis, rec.members, rules, epsilon=params.epsilon
+                )
+            except DegenerateMarginalError:
+                continue
+            if rho2 >= rec.theta:
+                revived.append(name)
+        for name in revived:
+            rec = quarantine.pop(name)
+            pool.append(AxisCandidate(
+                name=rec.axis, members=rec.members, ref=f"revived::{rec.axis}", tier="derived"
+            ))
 
-
-def _rho_or_none(
-    axes: Mapping[str, Sequence[str]],
-    subset: frozenset[str],
-    axis: str,
-    rules: Sequence[Zone],
-    params: SearchParams,
-) -> float | None:
-    """ρ, hoặc None khi mẫu số suy biến.
-
-    None ở đây KHÔNG có nghĩa "coi như 0": nó đi vào nhánh cách ly kèm ρ=NaN, nên
-    trục vẫn nằm trong sổ và vẫn được xét lại mỗi vòng — mất tích mới là điều
-    module này không cho phép.
-    """
-    try:
-        return marginal_risk_density(
-            axes, subset, axis, rules, epsilon=params.epsilon_marginal
-        )
-    except DegenerateMarginalError:
-        return None
-
-
-def _sweep_quarantine(
-    axes: Mapping[str, Sequence[str]],
-    rules: Sequence[Zone],
-    params: SearchParams,
-    quarantine: list[QuarantineRecord],
-    best: Node,
-    round_index: int,
-) -> None:
-    """Cuối MỖI vòng: tính lại ρ của mọi trục đang bị cách ly với node tốt nhất
-    vòng đó, rồi đọc điều kiện ra khỏi bản ghi và phán."""
-    for record in quarantine:
-        if record.revived_at_round is not None or record.axis in best["dynamic"]:
-            continue
-        rho_now = _rho_or_none(axes, best["dynamic"], record.axis, rules, params)
-        revive, reason = revisit_verdict(record, rho_now=rho_now)
-        record.history.append(f"vòng {round_index}: {reason}")
-        if revive:
-            record.revived_at_round = round_index
+    result.locked_axes = best
+    result.quarantined = list(quarantine.values())
+    return result

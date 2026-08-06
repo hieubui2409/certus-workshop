@@ -78,3 +78,18 @@ projection:
     - cell_id
     - operator
     - target_path
+
+# ─────────── Cổng kết nạp trục (admit_axis) ───────────
+# Cổng TẤT ĐỊNH quyết một trục ứng viên (do proposer đề xuất) có vào lưới không.
+# Thứ tự kiểm: provenance → degenerate → collinear(tên) → m_cap (m_cap dùng
+# search.max_dynamic_axes ở trên, KHÔNG lặp lại ở đây).
+admit:
+  # Bốn tier provenance — TỪ VỰNG đầy đủ. Tier ngoài danh sách ⇒ unknown_tier
+  # (không được chấm bởi thứ gì, nên bị TỪ CHỐI, không phải nhận). `asserted`
+  # nằm trong danh sách nhưng KHÔNG BAO GIỜ terminal: một khẳng định không trỏ
+  # được vào code đã đọc/chạy thì chưa đủ tư cách ⇒ no_provenance.
+  allowed_provenance_tiers: [executed, retrieved, derived, asserted]
+
+  # Số giá trị tối thiểu trong miền để một trục không suy biến. 1 giá trị không
+  # phân biệt được gì; trục như vậy làm hỏng phép đếm t-wise.
+  min_reachable_values: 2

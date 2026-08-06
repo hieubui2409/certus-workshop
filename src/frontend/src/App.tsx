@@ -13,6 +13,7 @@
 import { useCallback, useRef, useState } from 'react';
 import {
   ActionIcon,
+  Alert,
   AppShell,
   Badge,
   Button,
@@ -30,6 +31,7 @@ import {
 } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import {
+  IconAdjustments,
   IconChartGridDots,
   IconFileDescription,
   IconLayoutGrid,
@@ -46,6 +48,8 @@ import {
 } from '@tabler/icons-react';
 
 import { UploadPanel } from '@/components/UploadPanel';
+import { AxisSelectionPanel } from '@/components/AxisSelectionPanel';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ChatPanel } from '@/components/ChatPanel';
 import { ChatConversation } from '@/components/ChatConversation';
 import { CoverageTriptych } from '@/components/CoverageTriptych';
@@ -67,23 +71,29 @@ export default function App() {
   const scheme = useComputedColorScheme('light');
 
   const [upload, setUpload] = useState<UploadResult | null>(null);
-  const [question, setQuestion] = useState('Bộ kiểm thử của tôi phủ tới đâu?');
+  const [question, setQuestion] = useState('Bộ kiểm thử của repo này phủ tới đâu?');
+  const [confirmedAxes, setConfirmedAxes] = useState<Record<string, string[]> | null>(null);
   const [tab, setTab] = useState<string>('upload');
   const abortRef = useRef<AbortController | null>(null);
 
   const store = useAnalysisStore();
   const finished = store.status === 'done';
 
+  // Backend lưu kết quả theo `run_id = trace_id` (id của LẦN CHẠY), không theo
+  // tên repo mẫu. Trước đây hỏi coverage/payload bằng `upload.run_id` (tên repo)
+  // nên với backend thật luôn trả rỗng. Ưu tiên `trace_id` mà lượt chạy vừa phát.
+  const resolvedRunId = store.done?.trace_id ?? upload?.run_id;
+
   const coverageQuery = useQuery({
-    queryKey: ['coverage', upload?.run_id, finished],
-    queryFn: ({ signal }) => getCoverage(upload!.run_id, signal),
-    enabled: Boolean(upload) && finished,
+    queryKey: ['coverage', resolvedRunId, finished],
+    queryFn: ({ signal }) => getCoverage(resolvedRunId!, signal),
+    enabled: Boolean(resolvedRunId) && finished,
   });
 
   const promptQuery = useQuery({
-    queryKey: ['prompt-payload', upload?.run_id, finished],
-    queryFn: ({ signal }) => getPromptPayload(upload!.run_id, signal),
-    enabled: Boolean(upload) && finished,
+    queryKey: ['prompt-payload', resolvedRunId, finished],
+    queryFn: ({ signal }) => getPromptPayload(resolvedRunId!, signal),
+    enabled: Boolean(resolvedRunId) && finished,
   });
 
   const run = useCallback(async () => {
@@ -100,24 +110,38 @@ export default function App() {
     // `upload_id` (tệp vừa tải lên thật) — không có trường `run_id`. Repo mẫu
     // không đi qua `/api/upload` nên chỉ có `target`; tệp .zip thật thì
     // `client.uploadZip` đã gắn `upload_id` từ `UploadAck` trả về.
-    const req = upload.target
-      ? { target: upload.target, question }
-      : { upload_id: upload.upload_id ?? upload.run_id, question };
+    const req = {
+      ...(upload.target
+        ? { target: upload.target }
+        : { upload_id: upload.upload_id ?? upload.run_id }),
+      question,
+      // HITL: gửi confirmed_axes khi người dùng đã chốt. Repo mẫu bỏ trống ⇒ engine
+      // dùng đúng tập Enum cố định (cassette bất biến). Repo thật BỎ TRỐNG bị backend
+      // chặn — nút chạy đã khóa tới khi chốt trục (needsAxisSelection).
+      ...(confirmedAxes ? { confirmed_axes: confirmedAxes } : {}),
+    };
 
     await openAnalyzeStream(
       req,
       { onEvent: apply, signal: controller.signal },
     );
     finish();
-  }, [upload, question]);
+  }, [upload, question, confirmedAxes]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
     useAnalysisStore.getState().finish();
   }, []);
 
+  // Repo THẬT (upload, không phải repo mẫu) BẮT BUỘC chốt trục trước khi chạy —
+  // backend cũng gate (CertusError), nhưng khóa nút ở đây để người dùng không đâm
+  // vào lỗi. Repo mẫu (`target`) miễn: trục đã cố định, panel chỉ để xem.
+  const needsAxisSelection = Boolean(upload) && !upload?.target && !confirmedAxes;
+  const runDisabled = !upload || needsAxisSelection;
+
   const handleUpload = useCallback((result: UploadResult) => {
     setUpload(result);
+    setConfirmedAxes(null); // repo mới → trả quyền chọn trục cho engine
     useAnalysisStore.getState().reset();
   }, []);
 
@@ -156,14 +180,24 @@ export default function App() {
         </Group>
       </AppShell.Header>
 
-      <AppShell.Main>
-        <Container size="xl" px={0}>
-          <Grid gutter="md">
-            <Grid.Col span={{ base: 12, lg: 9 }}>
+      {/* Khoá chiều cao vào viewport + cắt tràn: KHÔNG để cả trang cuộn. Mỗi cột
+          tự cuộn nội bộ (dưới đây), nên header + tab-list đứng yên còn nội dung
+          dài thì cuộn trong cột của nó. */}
+      <AppShell.Main style={{ height: '100dvh', overflow: 'hidden' }}>
+        <Container fluid px={0} h="100%">
+          <Grid gutter="md" h="100%">
+            <Grid.Col
+              span={{ base: 12, lg: 9 }}
+              style={{ maxHeight: 'calc(100dvh - 94px)', overflowY: 'auto' }}
+            >
+              <ErrorBoundary resetKey={tab}>
               <Tabs value={tab} onChange={(v) => setTab(v ?? 'upload')} keepMounted={false}>
                 <Tabs.List mb="md">
                   <Tabs.Tab value="upload" leftSection={<IconUpload size={15} />}>
                     Nạp mã nguồn
+                  </Tabs.Tab>
+                  <Tabs.Tab value="axes" leftSection={<IconAdjustments size={15} />}>
+                    Chọn trục
                   </Tabs.Tab>
                   <Tabs.Tab value="conversation" leftSection={<IconMessages size={15} />}>
                     Hội thoại
@@ -196,6 +230,20 @@ export default function App() {
                   <UploadPanel result={upload} onResult={handleUpload} />
                 </Tabs.Panel>
 
+                <Tabs.Panel value="axes">
+                  {upload ? (
+                    <AxisSelectionPanel
+                      upload={upload}
+                      confirmed={confirmedAxes}
+                      onConfirm={setConfirmedAxes}
+                    />
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      Nạp một repo trước để engine đề xuất trục rủi ro.
+                    </Text>
+                  )}
+                </Tabs.Panel>
+
                 <Tabs.Panel value="conversation">
                   <ChatConversation />
                 </Tabs.Panel>
@@ -208,7 +256,7 @@ export default function App() {
                     onStop={stop}
                     status={store.status}
                     answer={store.answer}
-                    disabled={!upload}
+                    disabled={runDisabled}
                   />
                 </Tabs.Panel>
 
@@ -242,17 +290,32 @@ export default function App() {
                   />
                 </Tabs.Panel>
               </Tabs>
+              </ErrorBoundary>
             </Grid.Col>
 
-            <Grid.Col span={{ base: 12, lg: 3 }}>
-              <Stack gap="md">
+            {/* Cột phải KHÔNG tự cuộn (bỏ scrollbar ngoài) — nó là flex-column
+                bó sát viewport, để WarningFeed bên trong nuốt phần tràn bằng
+                ScrollArea RIÊNG của nó. Nhờ vậy chỉ còn MỘT scrollbar: của Cảnh báo. */}
+            <Grid.Col
+              span={{ base: 12, lg: 3 }}
+              style={{ maxHeight: 'calc(100dvh - 94px)', display: 'flex', flexDirection: 'column' }}
+            >
+              <Stack gap="md" style={{ flex: 1, minHeight: 0 }}>
                 <RunControls
                   running={store.status === 'running'}
-                  disabled={!upload}
+                  disabled={runDisabled}
                   onRun={run}
                   onStop={stop}
                   answerLength={store.answer.length}
                 />
+                {needsAxisSelection && (
+                  <Alert color="yellow" variant="light" p="xs">
+                    <Text size="xs">
+                      Repo tải lên phải <b>chọn trục</b> trước khi phân tích — mở tab “Chọn
+                      trục”, chốt 2–4 trục rồi chạy.
+                    </Text>
+                  </Alert>
+                )}
                 <StepProgress steps={store.steps} />
                 <WarningFeed warnings={store.warnings} />
               </Stack>

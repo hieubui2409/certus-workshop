@@ -5,7 +5,7 @@
  * này không tự quyết định gì.
  */
 
-import type { CoverageLayer, PromptPayload, RejectedFile, SampleRepo, UploadResult } from '@/types/api';
+import type { AxisDiscoveryResponse, CoverageLayer, PromptPayload, RejectedFile, SampleRepo, UploadResult } from '@/types/api';
 import { authHeaders, clearToken } from './auth';
 
 export const API_BASE: string = import.meta.env.VITE_API_BASE ?? '/api';
@@ -30,6 +30,28 @@ async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
 
 export function fetchSamples(signal?: AbortSignal): Promise<SampleRepo[]> {
   return getJson<SampleRepo[]>('/samples', signal);
+}
+
+/**
+ * Đề xuất tập trục (engine ToT) cho một repo — bước HITL trước khi phân tích.
+ * POST vì đầu vào là `{target | upload_id}`, không phải một id trên URL.
+ */
+export async function discoverAxes(
+  body: { target?: string; upload_id?: string },
+  signal?: AbortSignal,
+): Promise<AxisDiscoveryResponse> {
+  const res = await fetch(`${API_BASE}/axes/discover`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...(await authHeaders()) },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (res.status === 401 || res.status === 403) {
+    clearToken();
+    throw new Error(`/axes/discover bị từ chối (${res.status})`);
+  }
+  if (!res.ok) throw new Error(`/axes/discover trả về ${res.status} ${res.statusText}`);
+  return (await res.json()) as AxisDiscoveryResponse;
 }
 
 /** Đúng 3 phần tử. Không có phần tử thứ tư nào gộp ba tầng lại. */

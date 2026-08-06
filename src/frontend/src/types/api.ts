@@ -68,14 +68,34 @@ export interface PromptChunk {
   redacted: boolean;
 }
 
+/** Một tệp bị GIỮ LẠI, không gửi cho mô hình — đúng shape backend thật trả. */
+export interface HeldFile {
+  path: string;
+  reason: string;
+}
+
+/**
+ * Hai phương ngữ cùng một endpoint. `api/mock.ts` phát bản GIÀU (chunks kèm
+ * `excerpt` — nội dung thật đã rời khỏi máy, gồm cả `payments/.env`); backend
+ * thật (`/prompt-payload/{run_id}`) phát bản MỎNG (chỉ danh sách `files_sent`
+ * + `files_held` kèm lý do). Mọi trường ngoài `run_id` là TUỲ CHỌN: một shape
+ * thiếu trường của shape kia KHÔNG được làm vỡ panel — một panel vỡ ở đây là
+ * một panel không ai đọc được payload, đúng chỗ lỗi 8 cần phơi ra.
+ */
 export interface PromptPayload {
   run_id: string;
+  // Bản giàu (mock):
   /** bước nào của pipeline gửi payload này */
-  step: number;
-  model: string;
-  system_prompt_excerpt: string;
-  chunks: PromptChunk[];
-  total_chars: number;
+  step?: number;
+  model?: string;
+  system_prompt_excerpt?: string;
+  chunks?: PromptChunk[];
+  total_chars?: number;
+  // Bản mỏng (backend thật):
+  files_sent?: string[];
+  files_held?: HeldFile[];
+  blocklist?: string[];
+  note?: string;
 }
 
 /**
@@ -87,6 +107,40 @@ export interface AnalyzeRequest {
   target?: string;
   upload_id?: string;
   question: string;
+  /**
+   * HITL: tập trục người dùng ĐÃ CHỐT sau khi xem đề xuất của engine ToT. Key là
+   * tên trục cần giữ, value là danh sách giá trị (rỗng ⇒ giữ mọi giá trị). Bỏ
+   * trống ⇒ engine tự chọn (beam ρ + sàn viability).
+   */
+  confirmed_axes?: Record<string, string[]>;
+}
+
+/** Một trục ứng viên kèm phán quyết của engine ToT (khớp AxisCandidate backend). */
+export interface AxisCandidate {
+  axis: string;
+  members: string[];
+  source: string;
+  kept: boolean;
+  verdict: 'locked' | 'quarantined' | 'rejected' | 'floored';
+  rho?: number | null;
+  reason?: string | null;
+  /** Nguồn proposer tìm ra trục. */
+  origin: 'enum' | 'config' | 'branch';
+  /** Tier provenance — giải thích vì sao branch (asserted) bị loại khỏi default. */
+  tier: 'executed' | 'retrieved' | 'derived' | 'asserted';
+  /** Diễn giải của mô hình (advisory, chỉ live). */
+  rationale?: string | null;
+}
+
+/** Kết quả `/api/axes/discover` — đề xuất tập trục cho bước HITL. */
+export interface AxisDiscoveryResponse {
+  target?: string | null;
+  upload_id?: string | null;
+  candidates: AxisCandidate[];
+  engine: 'tot' | 'floor' | 'hitl';
+  note?: string | null;
+  /** TRUE cho repo mẫu — panel khóa, xem nhưng không sửa (giá trị học thuật). */
+  read_only: boolean;
 }
 
 /**
@@ -100,7 +154,7 @@ export interface CoverageLayer {
   source: string;
   k: number;
   n: number;
-  interval: import('./contracts').Interval;
+  interval: import('./contracts').Interval | null;
   flags: string[];
   /** ghi chú về mẫu số — vì sao n lại là con số đó */
   denominator_note: string;

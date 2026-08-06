@@ -41,10 +41,14 @@ function newThreadId(): string {
   return `web-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 }
 
+// Ở chế độ mock (mặc định cho 1000 SV), backend PHÁT LẠI một cassette theo khoá
+// sha256(model+system+messages+tools) — chỉ câu đã thu mới khớp. Gợi ý phải LÀ
+// đúng câu trong kịch bản đã thu, ĐÚNG THỨ TỰ: câu 2 (ISO) chỉ replay được SAU
+// câu 1 vì khoá của nó gồm cả lịch sử lượt 1. Câu ngoài kịch bản → cassette miss
+// → sự kiện error (đúng bản chất: mock không sinh câu mới). Xem A4 / system-arch §7.2.
 const SUGGESTIONS = [
-  'Grid có bao nhiêu ô rủi ro?',
-  'Độ tin của con số phủ tới đâu, n bao nhiêu?',
-  'Còn góc nào chưa ai nhìn không?',
+  'Đếm giúp tôi số ô của grid 3 trục: payment {card, cash}, amount {small, large}, region {vn, us}, ở mức t=2. Hãy dùng tool.',
+  'Tiêu chuẩn ISO nào quy định ngưỡng branch coverage tối thiểu, và ngưỡng cụ thể là bao nhiêu phần trăm?',
 ];
 
 export function ChatConversation() {
@@ -107,14 +111,24 @@ export function ChatConversation() {
         </Badge>
       </Group>
 
-      <Paper withBorder p="md" radius="md" mih={260}>
+      {/* Chiều cao CỐ ĐỊNH theo viewport (không minHeight — min cho phép nở quá
+          màn khiến cả cột trái cuộn, kéo tab-header dịch). Cột trái đã bị App khoá
+          ở calc(100dvh - 94px); trừ thêm ~360px (tab list + tiêu đề + gợi ý + hàng
+          nhập + caption) để khung khớp đúng, cột trái KHÔNG cuộn → tab đứng yên,
+          chỉ ScrollArea bên trong khung cuộn. */}
+      <Paper
+        withBorder
+        p="md"
+        radius="md"
+        style={{ height: 'calc(100dvh - 360px)', display: 'flex', flexDirection: 'column' }}
+      >
         {items.length === 0 ? (
           <Text size="sm" c="dimmed">
             Hỏi nhiều lượt. Mỗi lời gọi tool sẽ hiện ngay bên dưới câu hỏi — con số
             trong câu trả lời phải khớp với tool đã gọi.
           </Text>
         ) : (
-          <ScrollArea.Autosize mah={420} type="auto">
+          <ScrollArea style={{ flex: 1 }} type="auto">
             <Stack gap="xs">
               {items.map((it, i) => (
                 <ConversationItem key={i} item={it} />
@@ -125,23 +139,33 @@ export function ChatConversation() {
                 </Text>
               )}
             </Stack>
-          </ScrollArea.Autosize>
+          </ScrollArea>
         )}
       </Paper>
 
-      <Group gap="xs">
-        {SUGGESTIONS.map((s) => (
+      <Stack gap={4}>
+        <Text size="xs" c="dimmed">
+          Kịch bản mẫu (bấm để điền vào ô nhập, hỏi theo thứ tự):
+        </Text>
+        {SUGGESTIONS.map((s, i) => (
           <Button
             key={s}
             size="compact-xs"
             variant="subtle"
+            justify="flex-start"
             disabled={busy}
             onClick={() => setInput(s)}
+            styles={{ label: { whiteSpace: 'normal', textAlign: 'left', lineHeight: 1.3 } }}
+            leftSection={
+              <Badge size="xs" circle variant="light">
+                {i + 1}
+              </Badge>
+            }
           >
             {s}
           </Button>
         ))}
-      </Group>
+      </Stack>
 
       <Group align="flex-end" gap="xs">
         <Textarea
@@ -201,10 +225,16 @@ function ConversationItem({ item }: { item: Item }) {
     );
   }
   if (item.kind === 'error') {
+    // Ở mock, câu ngoài kịch bản đã thu → không có cassette khớp. Đó KHÔNG phải
+    // sự cố hệ thống mà là bản chất replay tất định: chỉ câu đã thu mới phát lại
+    // được. Diễn giải thành lời cho người học thay vì phơi ra một chuỗi hash.
+    const isCassetteMiss = item.text.includes('không có cassette khớp');
     return (
       <Paper withBorder radius="md" p="xs" bg="var(--mantine-color-red-light)">
         <Text size="sm" c="red">
-          Lỗi: {item.text}
+          {isCassetteMiss
+            ? 'Câu này chưa có trong kịch bản mẫu đã thu, nên chế độ mô phỏng không phát lại được. Hãy bấm một câu trong "Kịch bản mẫu" ở trên và hỏi theo đúng thứ tự.'
+            : `Lỗi: ${item.text}`}
         </Text>
       </Paper>
     );

@@ -41,6 +41,62 @@ class AnalyzeRequest(BaseModel):
     question: str = "Bộ kiểm thử của repo này phủ tới đâu?"
     user_id: str = "guest"
     project_id: str | None = None
+    #: HITL (tùy chọn): tập trục người dùng đã XÁC NHẬN sau khi xem đề xuất. Khi
+    #: có, pipeline THU HẸP các trục KHÁM PHÁ ĐƯỢC xuống đúng tập này — key là tên
+    #: trục cần giữ, value là danh sách giá trị cần giữ (rỗng ⇒ giữ mọi giá trị
+    #: của trục đó). None ⇒ đường mặc định KHÔNG đổi một byte: mọi trục Enum khám
+    #: phá được đều vào lưới, mẫu số tất định như cũ. Đây là OVERRIDE, không phải
+    #: một nguồn trục mới — chỉ CHỌN trong số trục code đã suy ra, nên trục vẫn
+    #: neo vào Enum thật, không do người (hay mô hình) bịa ra.
+    confirmed_axes: dict[str, list[str]] | None = None
+
+
+class AxisCandidate(BaseModel):
+    """Một trục ỨNG VIÊN khám phá được, kèm PHÁN QUYẾT của engine ToT.
+
+    `verdict`: `locked` (engine giữ vào lưới) · `quarantined` (dominated, ρ<θ, để
+    dành hồi sinh) · `rejected` (cổng admit từ chối hẳn, xem `reason`) · `floored`
+    (beam lock <2 nên rơi về giữ hết). `kept` = trục có trong tập cuối. `rho` là
+    mật độ rủi ro biên nếu chấm được. Đây là ĐỀ XUẤT của máy; người dùng chốt qua
+    `confirmed_axes` — luật "máy đề xuất, người phán xử".
+
+    `origin`/`tier`: NGUỒN proposer tìm ra trục (`enum`/`config`/`branch`) và tier
+    provenance (`retrieved`/`derived`/`asserted`). Chính cặp này giải thích vì sao
+    một trục branch bị `rejected: no_provenance` — asserted không đủ tư cách vào lưới
+    mặc định. `rationale`: câu diễn giải của mô hình (advisory, có thể None ở mock).
+    """
+
+    axis: str
+    members: list[str]
+    source: str
+    kept: bool
+    verdict: Literal["locked", "quarantined", "rejected", "floored"]
+    rho: float | None = None
+    reason: str | None = None
+    origin: Literal["enum", "config", "branch"] = "enum"
+    tier: Literal["executed", "retrieved", "derived", "asserted"] = "retrieved"
+    rationale: str | None = None
+
+
+class AxisDiscoveryResponse(BaseModel):
+    """Trả về cho bước HITL chọn trục.
+
+    `engine`: `tot` (beam ρ đã tỉa) · `floor` (zones không mã hoá rủi ro repo này →
+    giữ hết) · `hitl` (người đã chốt). `note` diễn giải cho người đọc. Danh sách
+    `candidates` gồm CẢ trục bị quarantine/reject — người học phải THẤY cái bị loại
+    và vì sao, không chỉ cái được giữ.
+
+    `read_only`: TRUE cho repo mẫu — panel hiện để XEM (giá trị học thuật: thấy engine
+    tỉa thế nào) nhưng KHÓA, không sửa được; tập trục cố định để cassette/bài giảng tất
+    định. FALSE cho repo thật — người dùng BẮT BUỘC chốt trước khi phân tích.
+    """
+
+    target: str | None = None
+    upload_id: str | None = None
+    candidates: list[AxisCandidate]
+    engine: Literal["tot", "floor", "hitl"]
+    note: str | None = None
+    read_only: bool = False
 
 
 class UploadAck(BaseModel):

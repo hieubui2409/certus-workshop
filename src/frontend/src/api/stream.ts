@@ -71,7 +71,10 @@ export async function consumeEventStream(
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    // Chuẩn hoá về LF: SSE hợp lệ dùng CRLF (`\r\n\r\n` giữa các frame), nhưng
+    // bộ tách dưới đây tìm dòng trống bằng `\n\n`. Không bỏ `\r` thì frame thật
+    // từ sse-starlette không bao giờ tách được — cả stream dồn thành một khối.
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
 
     let idx = buffer.indexOf('\n\n');
     while (idx !== -1) {

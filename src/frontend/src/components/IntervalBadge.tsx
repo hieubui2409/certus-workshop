@@ -12,13 +12,22 @@ import type { Interval } from '@/types/contracts';
 import { formatInterval, fraction, pct, ratio } from '@/lib/format';
 
 interface Props {
-  interval: Interval;
+  /** Có thể `null`: tầng CHƯA ĐO (`/api/coverage` trả `interval: null`). */
+  interval: Interval | null;
   /** hiện `k/n` ở đầu dòng — tắt khi chỗ gọi đã in k/n rồi */
   showFraction?: boolean;
   size?: 'xs' | 'sm' | 'md';
 }
 
 export function IntervalBadge({ interval, showFraction = true, size = 'sm' }: Props) {
+  // Tầng chưa đo không có khoảng tin cậy. Hiện "chưa đo" thay vì deref `null`.
+  if (!interval) {
+    return (
+      <Badge size={size} variant="light" color="gray" ff="monospace">
+        chưa đo
+      </Badge>
+    );
+  }
   const clusterFloor = interval.route === 'cluster-floor';
 
   return (

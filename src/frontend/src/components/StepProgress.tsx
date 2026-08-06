@@ -1,25 +1,34 @@
 /**
- * Tiến trình 8 bước của `analyze_pipeline` (system-design §4).
+ * Tiến trình các bước của `analyze_pipeline`.
  *
  * Mỗi bước phát một SSE event nên UI thấy được tiến trình. Bước bị `skipped`
  * hiện khác hẳn bước `ok`: một bước bị bỏ qua mà đọc như một bước đã chạy là
  * cách nửa pipeline biến mất trong im lặng.
+ *
+ * Số + tên ở đây phải KHỚP TỪNG-BƯỚC với `STAGES` của backend
+ * (`orchestrator/pipeline.py`): `_step` phát `step = STAGES.index(name)+1`. Trước
+ * đây bảng này là một mô hình "8 bước" khác — có "Mutation" mà STAGES không có, và
+ * lệch số ở bước 5/8 — nên hai bước thật (`read_coverage`, `run_gates`) luôn hiện
+ * "chưa chạy". Bảng này giờ phản chiếu đúng 9 stage thật sự chạy.
  */
 
 import { Badge, Group, Paper, Stack, Text } from '@mantine/core';
 import type { StepPayload } from '@/types/sse';
 
-/** Tên bước theo system-design §4 — 8 bước, thứ tự là hợp đồng. */
+/** Khớp 1-1 với STAGES của backend — thứ tự là hợp đồng. */
 const STEP_NAMES: Record<number, string> = {
-  1: 'Ingest — giải nén, lọc theo data policy',
-  2: 'Đóng băng axes',
-  3: 'Sinh cell (t-wise)',
-  4: 'Chạy bộ kiểm + coverage',
-  5: 'Mutation',
-  6: 'Project band (0 lời gọi LLM)',
-  7: 'Gate chain — 5 cổng',
-  8: 'Tổng hợp & trả lời',
+  1: 'Ingest — chọn repo, giải nén',
+  2: 'Lọc theo chính sách dữ liệu',
+  3: 'Đóng băng axes',
+  4: 'Chạy bộ kiểm',
+  5: 'Đọc coverage (phủ dòng)',
+  6: 'Sinh cell + project band',
+  7: 'Rollup risk-weighted + per-zone',
+  8: 'Gate chain — sàn per-zone',
+  9: 'Tổng hợp & trả lời (LLM)',
 };
+
+const STEP_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 interface Props {
   steps: StepPayload[];
@@ -33,10 +42,10 @@ export function StepProgress({ steps }: Props) {
   return (
     <Paper withBorder p="sm" radius="md">
       <Text size="xs" fw={600} mb={6}>
-        Pipeline — 8 bước
+        Pipeline — 9 bước
       </Text>
       <Stack gap={4}>
-        {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => {
+        {STEP_ORDER.map((n) => {
           const step = latest.get(n);
           const status = step?.status ?? 'chưa chạy';
           const color =

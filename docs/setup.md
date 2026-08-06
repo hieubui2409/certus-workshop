@@ -83,6 +83,47 @@ export CERTUS_ANTHROPIC_API_KEY=sk-ant-...
 
 Không bắt buộc. Trong buổi học chỉ dùng ở phần demo trên sân khấu.
 
+### Chạy live bằng gói Claude qua `ccs` + `cliproxy` (không cần API key trả tiền)
+
+Nếu bạn đã có **gói đăng ký Claude** (Pro/Max) và dùng Claude Code, bạn có thể chạy
+CERTUS ở chế độ `live` qua **cliproxy** — một proxy cục bộ bắc cầu SDK Anthropic sang
+gói của bạn, KHÔNG tốn API key tính tiền. `ccs` là công cụ quản lý proxy đó.
+
+1. Cài `ccs` (theo hướng dẫn của công cụ) rồi bật proxy cục bộ — nó lắng nghe ở
+   `:8317`:
+
+   ```bash
+   ccs local          # để nguyên terminal này chạy
+   ```
+
+2. Terminal khác, nạp biến môi trường proxy rồi trỏ CERTUS vào:
+
+   ```bash
+   eval "$(ccs env local)"                       # cấp token + base URL của proxy
+   export ANTHROPIC_BASE_URL=http://localhost:8317   # xem lưu ý (1) bên dưới
+   export CERTUS_LLM_MODE=live
+   export CERTUS_MODEL=claude-haiku-4-5           # xem lưu ý (2) bên dưới
+   uvicorn app.main:app --reload --port 8000
+   ```
+
+   Kiểm tra nhanh không cần backend: `python -m certus analyze
+   ../../fixtures/targets/shopcart` — ra bảng là proxy đã thông.
+
+**Lưu ý — hai chỗ hay vấp (đã kiểm chứng thực tế):**
+
+1. **Dùng `localhost`, đừng `127.0.0.1`.** Proxy thường chỉ lắng nghe trên IPv6
+   (`[::1]`), nên `http://127.0.0.1:8317` sẽ báo *connection refused* còn
+   `http://localhost:8317` (hoặc `http://[::1]:8317`) thì thông. `ccs env local` có
+   thể tự đặt `127.0.0.1` — cứ export đè lại như trên.
+2. **Chọn tên model "trần", tránh biến thể có hậu tố `[1m]`.** `claude-haiku-4-5`
+   và `claude-opus-5` chạy tốt; biến thể cache như `claude-opus-5[1m]` có thể làm
+   proxy **treo** (request không bao giờ trả về). Haiku rẻ + nhanh, hợp để thử;
+   Opus mạnh hơn cho phần diễn giải nhưng tốn hơn.
+
+Chế độ này hoàn toàn tùy chọn — mock vẫn là mặc định và đủ cho mọi bài trên lớp.
+Repo mẫu (shopcart/ledger/payments) khoá trục cố định nên kết quả tất định; chỉ khi
+bạn **tải repo của mình** lên thì mới bắt buộc qua bước HITL chọn trục.
+
 ---
 
 ## Lỗi thường gặp

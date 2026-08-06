@@ -80,6 +80,20 @@ def cassette_slug(key: str, hint: str | None = None) -> str:
     return f"{safe}__{short}.json"
 
 
+def _is_prefill_unsupported(exc: BaseException) -> bool:
+    """Có phải model từ chối lượt assistant mồi không (vd Opus không cho prefill)?
+
+    Nhận diện qua tên lớp + nội dung 400 chứ không import cứng anthropic.BadRequestError:
+    SDK nạp muộn, mà cả ổ khoá này chỉ cần biết "prefill không được → thử lại không mồi".
+    Haiku CHO prefill nên không bao giờ rơi vào đây → khoá/cassette của SV không đổi.
+    """
+    if getattr(exc, "status_code", None) not in (400, None):
+        return False
+    if type(exc).__name__ not in ("BadRequestError", "APIStatusError"):
+        return False
+    return "prefill" in str(exc).lower()
+
+
 # ─────────────────────────── kiểu trả về ───────────────────────────
 
 
@@ -181,6 +195,7 @@ class LLMClient:
         tools: Sequence[Mapping[str, Any]] | None = None,
         max_tokens: int | None = None,
         cassette_hint: str | None = None,
+        prefill: str | None = None,
     ) -> LLMResponse:
         """Gọi model và gom toàn bộ câu trả lời."""
         self._last_response = None
@@ -190,6 +205,7 @@ class LLMClient:
             tools=tools,
             max_tokens=max_tokens,
             cassette_hint=cassette_hint,
+            prefill=prefill,
         ):
             pass
         response = self._last_response
@@ -205,8 +221,16 @@ class LLMClient:
         tools: Sequence[Mapping[str, Any]] | None = None,
         max_tokens: int | None = None,
         cassette_hint: str | None = None,
+        prefill: str | None = None,
     ) -> AsyncIterator[str]:
-        """Phát ra từng mẩu chữ. API dùng SSE nên đây là dạng gốc, không phải tuỳ chọn."""
+        """Phát ra từng mẩu chữ. API dùng SSE nên đây là dạng gốc, không phải tuỳ chọn.
+
+        `prefill` mồi lượt trả lời của model bằng một chuỗi mở đầu (vd `{` để ép
+        JSON). Nó CHỈ tác động ở đường gọi API thật: model yếu như Haiku hay lờ
+        lệnh "trả JSON" rồi đáp bằng văn xuôi — mồi `{` buộc nó tiếp tục thành
+        JSON. Khoá cassette vẫn tính từ `messages` GỐC (chưa mồi) nên mock của
+        1000 SV không đổi khoá; mock bỏ qua `prefill` và phát lại nguyên cassette.
+        """
         mode = self.settings.llm_mode
         model = self.settings.model
         key = cassette_key(model=model, system=system, messages=messages, tools=tools)
@@ -221,20 +245,57 @@ class LLMClient:
                 yield chunk
             return
 
+        # Đường API thật: chèn lượt assistant mồi (nếu có) để model buộc tiếp nối
+        # từ đó. Chuỗi mồi KHÔNG do model sinh nên phải tự ghép lại vào đầu câu
+        # trả lời — cả ở token phát ra lẫn ở text cuối dùng để parse.
+        base_messages: list[Mapping[str, Any]] = list(messages)
+        api_messages: list[Mapping[str, Any]] = list(base_messages)
+        use_prefill = bool(prefill)
+        if use_prefill:
+            api_messages.append({"role": "assistant", "content": prefill})
+
         chunks: list[str] = []
         final: Any = None
-        async with self._stream_live(
-            system=system,
-            messages=messages,
-            tools=tools,
-            max_tokens=max_tokens or self.settings.max_tokens,
-        ) as stream:
-            async for text in stream.text_stream:
-                chunks.append(text)
-                yield text
-            final = await stream.get_final_message()
+        max_out = max_tokens or self.settings.max_tokens
+        prefill_emitted = False
+        try:
+            async with self._stream_live(
+                system=system,
+                messages=api_messages,
+                tools=tools,
+                max_tokens=max_out,
+            ) as stream:
+                # Mồi chỉ phát SAU khi mở được stream: nếu model từ chối prefill,
+                # lỗi nổ ngay lúc mở (chưa phát token nào) nên còn thử lại sạch được.
+                if use_prefill:
+                    yield prefill
+                    prefill_emitted = True
+                async for text in stream.text_stream:
+                    chunks.append(text)
+                    yield text
+                final = await stream.get_final_message()
+        except Exception as exc:  # noqa: BLE001 — chỉ nuốt đúng lỗi prefill, còn lại ném tiếp
+            if not (use_prefill and not prefill_emitted and _is_prefill_unsupported(exc)):
+                raise
+            # Model mạnh (Opus) không nhận lượt mồi: gọi lại KHÔNG mồi. Model tự mở
+            # JSON nên không ghép prefill vào text — parser đọc nguyên câu trả lời.
+            use_prefill = False
+            async with self._stream_live(
+                system=system,
+                messages=base_messages,
+                tools=tools,
+                max_tokens=max_out,
+            ) as stream:
+                async for text in stream.text_stream:
+                    chunks.append(text)
+                    yield text
+                final = await stream.get_final_message()
 
-        response = _response_from_message(final, chunks=chunks)
+        if use_prefill:
+            chunks.insert(0, prefill)
+        response = _response_from_message(
+            final, chunks=chunks, text_prefix=prefill if use_prefill else ""
+        )
         self._last_response = response
 
         if mode == "record":
@@ -420,8 +481,13 @@ def _response_from_record(record: Mapping[str, Any], *, model: str) -> LLMRespon
     )
 
 
-def _response_from_message(message: Any, *, chunks: Iterable[str]) -> LLMResponse:
-    text_parts: list[str] = []
+def _response_from_message(
+    message: Any, *, chunks: Iterable[str], text_prefix: str = ""
+) -> LLMResponse:
+    # `text_prefix` = chuỗi assistant-prefill đã mồi cho API. Model tiếp nối TỪ nó
+    # nên nó không nằm trong `message.content`; ghép lại vào đầu để `resp.text` là
+    # câu trả lời ĐẦY ĐỦ (vd có lại dấu `{` mở JSON) cho parser đọc đúng.
+    text_parts: list[str] = [text_prefix] if text_prefix else []
     tool_uses: list[dict[str, Any]] = []
     for block in getattr(message, "content", []) or []:
         block_type = getattr(block, "type", None)

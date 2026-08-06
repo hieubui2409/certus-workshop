@@ -26,12 +26,17 @@ interface Props {
 }
 
 export function GateChain({ gates }: Props) {
-  const ordered = [...gates].sort(
+  // Chỉ nhận verdict ĐÚNG shape chuỗi-5-cổng (có mảng `findings`). Luồng analyze
+  // thật phát event `gate` là FLOOR-verdict theo zone (shape khác hẳn) — lọc ra
+  // để panel không dựng thẻ vỡ; không có cái nào hợp lệ thì hiện trạng thái rỗng
+  // thay vì crash. (Chuỗi 5 cổng chưa được nối vào luồng analyze — mục design.)
+  const valid = gates.filter((g) => g && Array.isArray((g as GateVerdict).findings));
+  const ordered = [...valid].sort(
     (a, b) => GATE_ORDER.indexOf(a.gate) - GATE_ORDER.indexOf(b.gate),
   );
   const empty = ordered.filter((g) => g.denominator === 0);
 
-  if (gates.length === 0) {
+  if (valid.length === 0) {
     return (
       <Alert color="gray" variant="light" title="Chưa có cổng nào chạy">
         Chạy một lượt phân tích để xem chuỗi cổng.

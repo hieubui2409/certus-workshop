@@ -23,6 +23,17 @@ import { isUnanchoredObserved } from '@/lib/labels';
 
 export type RunStatus = 'idle' | 'running' | 'done' | 'error';
 
+/**
+ * Backend thật BỌC object con dưới một khoá (`{cell: …}`, `{span: …}`, `{claim: …}`)
+ * kèm `seq`/`trace_id`; còn mock.ts phát PHẲNG. Lấy phần trong khoá nếu có, không
+ * thì coi `data` đã là object cần dùng — nhờ vậy store nuốt được CẢ hai phương ngữ
+ * wire mà không cần mock và backend trùng khít từng byte.
+ */
+function unwrap<T>(data: T, key: string): T {
+  const d = data as unknown as Record<string, unknown>;
+  return d && typeof d === 'object' && key in d ? (d[key] as T) : data;
+}
+
 export interface AnalysisState {
   status: RunStatus;
   runId: string | null;
@@ -79,15 +90,15 @@ export const useAnalysisStore = create<AnalysisState>((set) => ({
         case 'log':
           return { logs: [...s.logs, event.data] };
         case 'claim':
-          return { claims: [...s.claims, event.data] };
+          return { claims: [...s.claims, unwrap(event.data, 'claim')] };
         case 'cell':
-          return { cells: [...s.cells, event.data] };
+          return { cells: [...s.cells, unwrap(event.data, 'cell')] };
         case 'gate':
           return { gates: [...s.gates, event.data] };
         case 'token':
           return { answer: s.answer + event.data.text };
         case 'span':
-          return { spans: [...s.spans, event.data] };
+          return { spans: [...s.spans, unwrap(event.data, 'span')] };
         case 'warning':
           return { warnings: [...s.warnings, event.data] };
         case 'done':

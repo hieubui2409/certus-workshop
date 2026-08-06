@@ -28,8 +28,25 @@ import { IconAlertTriangle } from '@tabler/icons-react';
 import { ResponsiveHeatMap, type HeatMapDatum } from '@nivo/heatmap';
 import type { Band, Cell } from '@/types/contracts';
 import { BAND_LEGEND_ORDER, BAND_STYLES, bandColor, breakdownDenominator } from '@/lib/bands';
-import { MOCK_AXES, MOCK_EXCLUDED } from '@/api/mock';
 import { CellDetail } from './CellDetail';
+
+/** Hai trục của lưới suy TỪ chính các ô thật, không từ hằng số mock.
+ *  Trước đây lấy `MOCK_AXES` nên chạy backend thật (trục khác tên) là vỡ. */
+function deriveAxes(cells: Cell[]): {
+  rowAxis: { name: string; values: string[] };
+  colAxis: { name: string; values: string[] };
+} {
+  const empty = { name: '', values: [] as string[] };
+  const first = cells.find((c) => c && c.axes);
+  if (!first) return { rowAxis: { ...empty }, colAxis: { ...empty } };
+  const keys = Object.keys(first.axes);
+  const distinct = (k: string) =>
+    [...new Set(cells.map((c) => c.axes[k]).filter((v): v is string => v != null))];
+  return {
+    rowAxis: { name: keys[0] ?? '', values: distinct(keys[0] ?? '') },
+    colAxis: { name: keys[1] ?? '', values: distinct(keys[1] ?? '') },
+  };
+}
 
 interface Datum extends HeatMapDatum {
   x: string;
@@ -55,8 +72,7 @@ export function GridHeatmap({ cells }: Props) {
   const scheme = useComputedColorScheme('light');
   const [selected, setSelected] = useState<Cell | null>(null);
 
-  const rowAxis = MOCK_AXES[0];
-  const colAxis = MOCK_AXES[1];
+  const { rowAxis, colAxis } = useMemo(() => deriveAxes(cells), [cells]);
 
   const byKey = useMemo(() => {
     const map = new Map<string, Cell>();
@@ -106,7 +122,7 @@ export function GridHeatmap({ cells }: Props) {
         enumerated={breakdown.enumerated}
         na={breakdown.na}
         scoreable={breakdown.scoreable}
-        excluded={MOCK_EXCLUDED.length}
+        excluded={0}
       />
 
       {naCells.length > 0 && (
@@ -179,7 +195,7 @@ export function GridHeatmap({ cells }: Props) {
         </Box>
       </Paper>
 
-      <BandLegend scheme={scheme} excluded={MOCK_EXCLUDED.length} />
+      <BandLegend scheme={scheme} excluded={0} />
 
       <CellDetail cell={selected} onClose={() => setSelected(null)} />
     </Stack>

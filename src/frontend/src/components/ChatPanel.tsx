@@ -27,6 +27,28 @@ const SUGGESTIONS = [
   'Có góc rủi ro nào chưa ai nhìn không?',
 ];
 
+/**
+ * Bước diễn giải của backend thật bắt mô hình trả một object JSON
+ * `{nonce, answer, claims}`; `event: token` stream NGUYÊN văn JSON đó. Khi lượt
+ * đã xong, chuỗi là JSON hoàn chỉnh — lấy đúng phần `answer` (prose) để hiển thị.
+ * Mock phát prose thẳng (không mở `{`) nên bỏ qua; JSON đang stream dở parse
+ * lỗi nên cũng bỏ qua — người dùng thấy nó hình thành rồi snap về prose khi xong.
+ * KHÔNG đụng tới `claims`: chúng có bảng riêng ở Claim inspector.
+ */
+function displayAnswer(answer: string): string {
+  const trimmed = answer.trim();
+  if (!trimmed.startsWith('{')) return answer;
+  try {
+    const obj = JSON.parse(trimmed) as { answer?: unknown };
+    if (obj && typeof obj === 'object' && typeof obj.answer === 'string') {
+      return obj.answer;
+    }
+  } catch {
+    /* JSON chưa hoàn chỉnh (đang stream) — giữ thô cho tới khi lượt xong */
+  }
+  return answer;
+}
+
 export function ChatPanel({
   question,
   onQuestionChange,
@@ -108,7 +130,7 @@ export function ChatPanel({
         ) : (
           <ScrollArea.Autosize mah={340} type="auto">
             <Box style={{ whiteSpace: 'pre-wrap' }}>
-              <Text size="sm">{answer}</Text>
+              <Text size="sm">{displayAnswer(answer)}</Text>
             </Box>
           </ScrollArea.Autosize>
         )}

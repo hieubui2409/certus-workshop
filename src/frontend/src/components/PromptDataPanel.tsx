@@ -30,12 +30,22 @@ export function PromptDataPanel({ payload, loading }: Props) {
     );
   }
 
+  // Bản giàu (mock) mang `chunks` kèm excerpt; bản mỏng (backend thật) chỉ mang
+  // `files_sent`. Suy danh sách tệp từ shape nào có — không có thì để rỗng, KHÔNG
+  // deref `.length` trên `undefined` (chính chỗ panel này từng vỡ với backend thật).
+  const chunks = payload.chunks ?? [];
+  const filesSent = payload.files_sent ?? chunks.map((c) => c.path);
+  const filesHeld = payload.files_held ?? [];
+  const hasStep = payload.step != null && payload.model;
+
   return (
     <Stack gap="sm">
       <Box>
         <Title order={3}>Dữ liệu đã gửi cho mô hình</Title>
         <Text size="sm" c="dimmed">
-          Đây là nội dung ĐÃ RỜI KHỎI máy bạn ở bước {payload.step}, tới model {payload.model}.
+          {hasStep
+            ? `Đây là nội dung ĐÃ RỜI KHỎI máy bạn ở bước ${payload.step}, tới model ${payload.model}.`
+            : 'Đây là danh sách tệp ĐÃ RỜI KHỎI máy bạn — đúng những gì thực sự đi vào prompt.'}
         </Text>
       </Box>
 
@@ -44,7 +54,8 @@ export function PromptDataPanel({ payload, loading }: Props) {
           {payload.run_id}
         </Badge>
         <Badge variant="light" color="gray">
-          {payload.chunks.length} đoạn · {payload.total_chars} ký tự
+          {filesSent.length} tệp
+          {payload.total_chars != null ? ` · ${payload.total_chars} ký tự` : ''}
         </Badge>
       </Group>
 
@@ -56,15 +67,55 @@ export function PromptDataPanel({ payload, loading }: Props) {
         </Text>
       </Alert>
 
-      <Paper withBorder p="sm" radius="md">
-        <Text size="xs" fw={600} mb={4}>
-          Trích system prompt
-        </Text>
-        <Code block>{payload.system_prompt_excerpt}</Code>
-      </Paper>
+      {/* Bản mỏng của backend thật: chỉ có danh sách path (không excerpt). Đây là
+          bề mặt lỗi 8 — `payments/.env` hiện ở "đã gửi" là một phát hiện. */}
+      {chunks.length === 0 && filesSent.length > 0 && (
+        <Paper withBorder p="sm" radius="md">
+          <Text size="xs" fw={600} mb={4}>
+            Tệp đã gửi cho mô hình
+          </Text>
+          <Stack gap={2}>
+            {filesSent.map((path) => (
+              <Text key={path} size="sm" ff="monospace">
+                {path}
+              </Text>
+            ))}
+          </Stack>
+        </Paper>
+      )}
 
+      {filesHeld.length > 0 && (
+        <Paper withBorder p="sm" radius="md">
+          <Text size="xs" fw={600} mb={4}>
+            Tệp bị giữ lại — không gửi ({filesHeld.length})
+          </Text>
+          <Stack gap={2}>
+            {filesHeld.map((f) => (
+              <Group key={f.path} gap="xs" wrap="nowrap">
+                <Text size="sm" ff="monospace">
+                  {f.path}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {f.reason}
+                </Text>
+              </Group>
+            ))}
+          </Stack>
+        </Paper>
+      )}
+
+      {payload.system_prompt_excerpt && (
+        <Paper withBorder p="sm" radius="md">
+          <Text size="xs" fw={600} mb={4}>
+            Trích system prompt
+          </Text>
+          <Code block>{payload.system_prompt_excerpt}</Code>
+        </Paper>
+      )}
+
+      {chunks.length > 0 && (
       <Accordion variant="separated" radius="md" multiple defaultValue={[]}>
-        {payload.chunks.map((chunk) => (
+        {chunks.map((chunk) => (
           <Accordion.Item key={`${chunk.order}-${chunk.path}`} value={`${chunk.order}`}>
             <Accordion.Control>
               <Group gap="xs" wrap="nowrap">
@@ -90,6 +141,7 @@ export function PromptDataPanel({ payload, loading }: Props) {
           </Accordion.Item>
         ))}
       </Accordion>
+      )}
     </Stack>
   );
 }

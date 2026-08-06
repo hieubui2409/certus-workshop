@@ -40,8 +40,13 @@ CREATE INDEX IF NOT EXISTS idx_spans_trace ON spans(trace_id, started_at);
 
 
 class SpanRow(BaseModel):
-    """Một span đã lưu. Tên trường khớp hợp đồng SSE `event: span` ở
-    `docs/design/sdd/00-index.md` §5."""
+    """Một span đã lưu. Tên trường ở đây là tên LƯU TRỮ (khớp cột SQLite:
+    `parent_id`, `duration_ms`, `tokens_in/out`) — KHÔNG phải tên trên dây.
+
+    Hợp đồng SSE `event: span` (`docs/design/sdd/00-index.md` §5) là
+    `{span_id, parent, name, ms, tokens}`. Gửi thẳng `model_dump()` ra SSE thì
+    TraceViewer đọc `.ms`/`.parent`/`.tokens` không thấy → ra `NaNms` và mất quan
+    hệ cha-con. Dùng `to_sse()` để chiếu về đúng hợp đồng khi phát ra dây."""
 
     span_id: str
     trace_id: str
@@ -55,6 +60,26 @@ class SpanRow(BaseModel):
     tokens_in: int | None = None
     tokens_out: int | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
+
+    def to_sse(self) -> dict[str, Any]:
+        """Chiếu span về ĐÚNG hợp đồng SSE `event: span`
+        (`docs/design/sdd/00-index.md` §5): `{span_id, parent, name, ms, tokens}`
+        cộng `trace_id`/`kind`/`status` mà TraceViewer cần để phát hiện lỗi 11 và
+        đánh dấu span mồ côi. `tokens` là TỔNG in+out (mock phát một con số duy
+        nhất); cả hai None thì để None — không bịa số 0."""
+        tokens = None
+        if self.tokens_in is not None or self.tokens_out is not None:
+            tokens = (self.tokens_in or 0) + (self.tokens_out or 0)
+        return {
+            "span_id": self.span_id,
+            "parent": self.parent_id,
+            "name": self.name,
+            "ms": self.duration_ms,
+            "tokens": tokens,
+            "trace_id": self.trace_id,
+            "kind": self.kind,
+            "status": self.status,
+        }
 
 
 class SpanNode(SpanRow):

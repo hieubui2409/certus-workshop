@@ -32,6 +32,21 @@ export const WARNING_CATALOGUE: Record<string, WarningStyle> = {
     explain:
       'Khoảng tin cậy đã tràn ra ngoài [0,1] rồi bị cắt về biên. Nó trông hẹp KHÔNG PHẢI vì dữ liệu chắc, mà vì bị cắt. Đừng đọc độ rộng của nó như độ chắc chắn.',
   },
+  // Backend phát mã `interval-saturated`/`interval-wide` từ cờ của Wilson interval
+  // (pipeline.py `line_rate.flags`/`grid_rate.flags`); phải có mặt ở bảng tra, nếu
+  // không hai cảnh báo hay gặp nhất lại rơi vào FALLBACK "chưa phân loại".
+  'interval-saturated': {
+    severity: 'critical',
+    title: 'Khoảng tin cậy chạm biên [0,1] — hẹp giả',
+    explain:
+      'Khoảng đã tràn ra ngoài [0,1] rồi bị cắt về biên. Nó trông hẹp vì bị cắt, không phải vì dữ liệu chắc — đừng đọc độ rộng của nó như độ chắc chắn.',
+  },
+  'interval-wide': {
+    severity: 'critical',
+    title: 'Khoảng tin cậy rộng hơn 30 điểm phần trăm',
+    explain:
+      'Khoảng tin cậy rộng hơn cả 30 điểm phần trăm — bản thân con số điểm gần như không mang thông tin. Cần thêm mẫu trước khi đọc tỉ lệ này như một kết luận.',
+  },
   'cluster-floor': {
     severity: 'critical',
     title: 'Zone rơi vào route cluster-floor',
@@ -115,6 +130,18 @@ export const WARNING_CATALOGUE: Record<string, WarningStyle> = {
     title: 'Một frame SSE có phần data không parse được',
     explain:
       'Frame bị hỏng hoặc sai định dạng JSON. Sự kiện đó đã MẤT khỏi màn hình — con số bạn đang đọc có thể đang thiếu một phần.',
+  },
+  'llm-output': {
+    severity: 'warn',
+    title: 'Câu trả lời của mô hình không dùng được nguyên vẹn',
+    explain:
+      'Bước diễn giải KHÔNG đọc được (hoặc bỏ) câu trả lời của mô hình: sai định dạng JSON, lệch nonce chống bơm, hoặc claim dị dạng bị validator từ chối. Đây KHÔNG phải chuyện chính sách dữ liệu — các con số đo lường phía trên vẫn do pipeline tính, chỉ phần diễn giải bằng lời của mô hình là thiếu.',
+  },
+  'data-policy': {
+    severity: 'warn',
+    title: 'Chính sách dữ liệu đã can thiệp trước khi gửi cho mô hình',
+    explain:
+      'Một số tệp bị GIỮ LẠI (không gửi cho mô hình) theo config/data-policy.yaml, hoặc bước diễn giải báo một điều kiện về dữ liệu. Con số phía sau chỉ dựa trên phần dữ liệu THỰC SỰ đã gửi — đọc nguyên văn bên dưới để biết cái gì đã bị giữ.',
   },
 };
 

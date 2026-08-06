@@ -11,10 +11,16 @@
  * KHÔNG có nút đóng. Một cảnh báo tắt được là một cảnh báo sẽ bị tắt.
  */
 
-import { Alert, Badge, Group, Paper, ScrollArea, Stack, Text, Title } from '@mantine/core';
+import { Alert, Badge, Box, Group, Paper, ScrollArea, Stack, Text, Title } from '@mantine/core';
 import { IconAlertTriangle, IconInfoCircle, IconShieldCheck } from '@tabler/icons-react';
 import type { WarningPayload } from '@/types/sse';
 import { describeWarning, MANDATORY_WARNING_CODES, severityColor } from '@/lib/warnings';
+
+const SEVERITY_LABEL: Record<string, string> = {
+  critical: 'nghiêm trọng',
+  warn: 'cảnh báo',
+  info: 'thông tin',
+};
 
 interface Props {
   warnings: WarningPayload[];
@@ -26,8 +32,13 @@ export function WarningFeed({ warnings }: Props) {
   );
 
   return (
-    <Paper withBorder p="md" radius="md" h="100%">
-      <Stack gap="sm" h="100%">
+    <Paper
+      withBorder
+      p="md"
+      radius="md"
+      style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+    >
+      <Stack gap="sm" style={{ flex: 1, minHeight: 0 }}>
         <Group justify="space-between" align="center">
           <Title order={4}>Cảnh báo</Title>
           <Badge color={warnings.length > 0 ? 'red' : 'gray'} variant="filled">
@@ -51,7 +62,7 @@ export function WarningFeed({ warnings }: Props) {
           </Alert>
         )}
 
-        <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars>
+        <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" offsetScrollbars>
           <Stack gap="xs">
             {warnings.map((w, i) => {
               const style = describeWarning(w.code);
@@ -61,35 +72,62 @@ export function WarningFeed({ warnings }: Props) {
                   key={`${w.code}-${i}`}
                   color={color}
                   variant="light"
-                  icon={
-                    style.severity === 'info' ? (
-                      <IconInfoCircle size={18} />
-                    ) : (
-                      <IconAlertTriangle size={18} />
-                    )
-                  }
+                  // KHÔNG dùng slot `icon` của Alert: nó chừa lề trái cho icon và
+                  // đẩy CẢ body (giải thích + khung nguyên văn) thụt vào theo. Đưa
+                  // icon vào cạnh tiêu đề để thân thẻ tràn hết chiều ngang.
                   title={
-                    <Group gap="xs" wrap="nowrap">
-                      <Badge size="xs" color={color} ff="monospace">
-                        {w.code}
-                      </Badge>
-                      <Text fw={600} size="sm">
+                    <Group gap={6} wrap="nowrap" align="flex-start">
+                      {style.severity === 'info' ? (
+                        <IconInfoCircle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+                      ) : (
+                        <IconAlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+                      )}
+                      <Text fw={700} size="sm" lh={1.3}>
                         {style.title}
                       </Text>
                     </Group>
                   }
+                  styles={{ body: { gap: 6 } }}
                 >
-                  <Text size="xs" mb={4}>
+                  {/* Mã + mức độ thành chip phụ, KHÔNG viết hoa/cắt như badge mặc
+                      định — dòng chính là tiêu đề thành câu ở trên. */}
+                  <Group gap={6} mb={6} wrap="wrap">
+                    <Badge size="xs" color={color} variant="outline" ff="monospace" tt="none">
+                      {w.code}
+                    </Badge>
+                    <Badge size="xs" color={color} variant="light" tt="none">
+                      {SEVERITY_LABEL[style.severity] ?? style.severity}
+                    </Badge>
+                  </Group>
+
+                  <Text size="xs" mb={6} lh={1.4}>
                     {style.explain}
                   </Text>
-                  <Text size="xs" c="dimmed" ff="monospace">
-                    {w.msg}
-                  </Text>
+
+                  {/* Nguyên văn backend, không rút gọn — đóng khung phụ để tách
+                      rõ khỏi phần diễn giải của UI. */}
+                  <Box
+                    p={8}
+                    style={{
+                      borderRadius: 6,
+                      background: 'var(--mantine-color-gray-light)',
+                      borderInlineStart: `2px solid var(--mantine-color-${color}-5)`,
+                    }}
+                  >
+                    <Text
+                      size="xs"
+                      c="dimmed"
+                      ff="monospace"
+                      style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                    >
+                      {w.msg}
+                    </Text>
+                  </Box>
                 </Alert>
               );
             })}
           </Stack>
-        </ScrollArea.Autosize>
+        </ScrollArea>
 
         {warnings.length > 0 && missing.length > 0 && (
           <Text size="xs" c="dimmed">

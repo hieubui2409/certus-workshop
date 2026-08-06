@@ -83,7 +83,10 @@ export async function openChatStream(
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    // sse-starlette đóng khung frame bằng CRLF (`\r\n\r\n`); chuẩn hoá về `\n`
+    // TRƯỚC khi tách, nếu không `indexOf('\n\n')` không bao giờ khớp và cả stream
+    // dồn thành một khối rác — đúng lỗi đã vá ở `stream.ts` của luồng analyze.
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
     let idx = buffer.indexOf('\n\n');
     while (idx !== -1) {
       const frame = buffer.slice(0, idx);

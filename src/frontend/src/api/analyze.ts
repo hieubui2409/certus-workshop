@@ -15,10 +15,10 @@
  * nào là của sản phẩm, triệu chứng nào là của mock.
  */
 
-import type { AnalyzeRequest, CoverageLayer, PromptPayload, SampleRepo, UploadResult } from '@/types/api';
+import type { AnalyzeRequest, AxisDiscoveryResponse, CoverageLayer, PromptPayload, SampleRepo, UploadResult } from '@/types/api';
 import type { SseEvent } from '@/types/sse';
 import { authHeaders } from './auth';
-import { API_BASE, fetchCoverage, fetchPromptPayload, fetchSamples, uploadSample, uploadZip } from './client';
+import { API_BASE, discoverAxes, fetchCoverage, fetchPromptPayload, fetchSamples, uploadSample, uploadZip } from './client';
 import {
   mockAnalyzeStream,
   mockFetchCoverage,
@@ -46,6 +46,18 @@ export function sendZip(file: File): Promise<UploadResult> {
 
 export function getCoverage(runId: string, signal?: AbortSignal): Promise<CoverageLayer[]> {
   return USE_MOCK ? mockFetchCoverage() : fetchCoverage(runId, signal);
+}
+
+/**
+ * Đề xuất tập trục cho bước HITL. Ở mock KHÔNG có backend engine để chạy beam,
+ * trả `null` để panel tự ẩn (kịch bản mock phát lại tập trục cố định của
+ * cassette, không có bước chọn trục động).
+ */
+export function getAxisDiscovery(
+  body: { target?: string; upload_id?: string },
+  signal?: AbortSignal,
+): Promise<AxisDiscoveryResponse | null> {
+  return USE_MOCK ? Promise.resolve(null) : discoverAxes(body, signal);
 }
 
 export function getPromptPayload(runId: string, signal?: AbortSignal): Promise<PromptPayload> {
