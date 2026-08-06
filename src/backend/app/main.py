@@ -13,7 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import analyze, auth, config, health, ledger, samples, upload
+from app.api.routes import analyze, auth, chat, config, health, ledger, samples, upload
 from app.api.schemas import ErrorOut
 from app.contracts.errors import CertusError, PermissionDenied
 from app.observability import tracing
@@ -89,6 +89,7 @@ async def _certus_error(request: Request, exc: CertusError) -> JSONResponse:
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(analyze.router)
+app.include_router(chat.router)
 app.include_router(samples.router)
 app.include_router(upload.router)
 app.include_router(config.router)

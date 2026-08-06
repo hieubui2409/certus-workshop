@@ -35,6 +35,7 @@ import {
   IconLayoutGrid,
   IconListCheck,
   IconMessage,
+  IconMessages,
   IconMoon,
   IconPlayerPlay,
   IconPlayerStop,
@@ -46,6 +47,7 @@ import {
 
 import { UploadPanel } from '@/components/UploadPanel';
 import { ChatPanel } from '@/components/ChatPanel';
+import { ChatConversation } from '@/components/ChatConversation';
 import { CoverageTriptych } from '@/components/CoverageTriptych';
 import { GridHeatmap } from '@/components/GridHeatmap';
 import { GateChain } from '@/components/GateChain';
@@ -163,6 +165,9 @@ export default function App() {
                   <Tabs.Tab value="upload" leftSection={<IconUpload size={15} />}>
                     Nạp mã nguồn
                   </Tabs.Tab>
+                  <Tabs.Tab value="conversation" leftSection={<IconMessages size={15} />}>
+                    Hội thoại
+                  </Tabs.Tab>
                   <Tabs.Tab value="chat" leftSection={<IconMessage size={15} />}>
                     Hỏi đáp
                   </Tabs.Tab>
@@ -189,6 +194,10 @@ export default function App() {
 
                 <Tabs.Panel value="upload">
                   <UploadPanel result={upload} onResult={handleUpload} />
+                </Tabs.Panel>
+
+                <Tabs.Panel value="conversation">
+                  <ChatConversation />
                 </Tabs.Panel>
 
                 <Tabs.Panel value="chat">

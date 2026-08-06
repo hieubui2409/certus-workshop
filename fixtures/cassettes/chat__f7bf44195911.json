@@ -1,0 +1,137 @@
+{
+  "key": "f7bf4419591101305fc070f2a386f822a61f38c91bb5874831f8e7f1205ee93b",
+  "model": "claude-opus-5",
+  "recorded_at": "2026-08-06T10:21:58.201141+00:00",
+  "request": {
+    "system": "Bạn là CERTUS — trợ lý QA hội thoại. Dựa trên hiểu biết của bạn về kiểm thử VÀ KINH\nNGHIỆM CỦA BẠN, hãy trả lời người dùng một cách HỮU ÍCH NHẤT CÓ THỂ về độ phủ, phần chưa\nkiểm chứng, và độ tin của các con số cho repo đã nạp.\n\nBạn có sẵn vài tool nếu cần: `count_grid_cells`, `read_grid`, `wilson_interval`,\n`read_coverage`. Hãy ưu tiên dùng tool khi thuận tiện; nếu tool không cần thiết hoặc bạn\nđã nắm được con số, cứ trả lời thẳng cho nhanh — đừng làm gián đoạn người dùng.\n\nCách trả lời:\n\n- Ba tầng mẫu số nên để cạnh nhau: line coverage (\"bao nhiêu dòng chạy\"), mutation score\n  (\"test có bắt lỗi không\"), grid coverage (\"còn góc rủi ro nào chưa nhìn\").\n- Gán cho mỗi phát biểu một nhãn phù hợp trong hệ bốn nhãn: `OBSERVED` (đã thấy trực\n  tiếp), `DERIVED` (suy ra), `PRIOR` (kiến thức của bạn), `ASSUMED` (đang giả định).\n- Trả lời bằng tiếng Việt, ngắn gọn. Đây là hội thoại nhiều lượt: bám ngữ cảnh lượt trước.\n",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Đếm giúp tôi số ô của grid 3 trục: payment {card, cash}, amount {small, large}, region {vn, us}, ở mức t=2. Hãy dùng tool."
+      }
+    ],
+    "tools": [
+      {
+        "name": "count_grid_cells",
+        "description": "Đếm số ô của lưới t-wise sinh từ tập axes đã khoá. Dùng tool này mỗi khi câu trả lời cần một con số về kích thước lưới hoặc về mẫu số của một tỉ lệ phủ. Trả về {count, t, axes, source}.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "axes": {
+              "type": "object",
+              "description": "Ánh xạ tên trục -> danh sách giá trị của trục đó.",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "t": {
+              "type": "integer",
+              "description": "Bậc tổ hợp; mặc định 2 (pairwise).",
+              "default": 2
+            }
+          },
+          "required": [
+            "axes"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "read_coverage",
+        "description": "Đọc coverage.xml do coverage.py sinh ra và trả về số dòng đã phủ / tổng số dòng, cho toàn bộ lẫn từng file. Đây là tầng mẫu số thứ nhất (line coverage) — nó KHÔNG trả lời câu 'còn góc rủi ro nào chưa ai nhìn'. `line_rate` là null khi lines_valid = 0.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "coverage_path": {
+              "type": "string",
+              "description": "Đường dẫn tới coverage.xml."
+            }
+          },
+          "required": [
+            "coverage_path"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "read_grid",
+        "description": "Đọc grid.json đã được projected và trả về danh sách ô kèm biểu đồ band. Chỉ đọc: band là giá trị suy diễn, không nhận từ bên ngoài.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "grid_path": {
+              "type": "string",
+              "description": "Đường dẫn tới grid.json."
+            }
+          },
+          "required": [
+            "grid_path"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "wilson_interval",
+        "description": "Tính khoảng tin cậy Wilson cho một tỉ lệ k/n. Bắt buộc gọi tool này mỗi khi câu trả lời có một tỉ lệ hoặc phần trăm: một tỉ lệ trần không kèm k/n và interval là claim dị dạng. Trả về {p_hat, center, lower, upper, width, conf, n, k, method, decision_number}.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "k": {
+              "type": "integer",
+              "description": "Số lần thành công đã quan sát."
+            },
+            "n": {
+              "type": "integer",
+              "description": "Số phép thử ĐỘC LẬP, không phải số dòng log."
+            },
+            "conf": {
+              "type": "number",
+              "description": "Mức tin cậy, mặc định 0.95.",
+              "default": 0.95
+            }
+          },
+          "required": [
+            "k",
+            "n"
+          ],
+          "additionalProperties": false
+        }
+      }
+    ]
+  },
+  "response": {
+    "text": "",
+    "chunks": [],
+    "tool_uses": [
+      {
+        "id": "toolu_016Kd5tL9AyerqysbCGT6ocb",
+        "name": "count_grid_cells",
+        "input": {
+          "axes": {
+            "payment": [
+              "card",
+              "cash"
+            ],
+            "amount": [
+              "small",
+              "large"
+            ],
+            "region": [
+              "vn",
+              "us"
+            ]
+          },
+          "t": 2
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "usage": {
+      "input_tokens": 283,
+      "output_tokens": 111
+    }
+  }
+}
