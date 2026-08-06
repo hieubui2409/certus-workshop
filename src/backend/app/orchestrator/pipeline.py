@@ -1,0 +1,700 @@
+"""Luồng phân tích: từ một thư mục mã nguồn tới một phán quyết.
+
+Tệp này là chỗ DUY NHẤT biết thứ tự các bước. Mọi module bên dưới cố tình không
+biết mình đứng ở bước nào — nhờ vậy đổi thứ tự là sửa một tệp, không phải sửa
+bảy tệp.
+
+Ba luật của luồng:
+
+1. **Bước sau không được chạy trên đầu vào rỗng của bước trước.** Không có
+   nhánh "không có dữ liệu thì coi như đạt".
+2. **Mọi tỉ lệ sinh ra ở đây đều đi kèm k, n và khoảng.** Một `float` trần rời
+   khỏi tệp này là một lỗi hợp đồng.
+3. **Việc tính toán là của code, việc diễn giải là của mô hình.** Mô hình không
+   bao giờ được hỏi "bao nhiêu ô", chỉ được hỏi "con số này nghĩa là gì".
+"""
+
+from __future__ import annotations
+
+import hashlib
+import re
+import time
+from collections.abc import AsyncIterator, Mapping
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from pydantic import ValidationError
+
+from app.agent.claims import ClaimParseError, extract_claims_json, parse_claims
+from app.agent.context import load_prompt, render_prompt
+from app.agent.llm import LLMClient
+from app.agent.persona import PersonaStore
+from app.agent.retrieval import build_context
+from app.api.schemas import (
+    AnalyzeRequest,
+    AnalyzeResponse,
+    ClaimOut,
+    CoverageOut,
+    RateOut,
+    StreamEvent,
+    ZoneOut,
+)
+from app.contracts.errors import CassetteMissError, CertusError, ConfigError
+from app.contracts.types import Band, Cell, Claim, Interval
+from app.core.grid.cells import cell_id as make_cell_id
+from app.core.grid.cells import enumerate_t_wise
+from app.core.grid.project import project_cell
+from app.core.grid.rollup import (
+    evaluate_floor,
+    load_band_scores,
+    load_floors,
+    min_per_zone,
+    risk_weighted_coverage,
+)
+from app.core.grid.zones import load_zone_config, require_zone
+from app.core.stats.intervals import interval
+from app.orchestrator.observe import (
+    load_mutation_artifact,
+    lookup,
+    mutation_run_for_cell,
+    observations_for_cells,
+    scan_tests,
+)
+from app.observability import tracing
+from app.observability.logging import get_logger
+from app.policy.data_policy import load_policy
+from app.settings import Settings, settings as default_settings
+
+log = get_logger()
+
+
+# --------------------------------------------------------------------------
+# Khám phá trục
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class Axes:
+    """Các trục rủi ro tìm được trong repo, kèm nguồn gốc.
+
+    `source` không phải trang trí: một trục suy ra từ Enum trong code có tư cách
+    khác hẳn một trục do mô hình đề xuất, và cổng đối xử với chúng khác nhau.
+    """
+
+    values: dict[str, list[str]] = field(default_factory=dict)
+    source: dict[str, str] = field(default_factory=dict)
+
+    def size(self) -> int:
+        return len(self.values)
+
+
+_ENUM_HINTS = ("Tier", "Zone", "Method", "Type", "Status", "Kind", "Mode", "Level")
+
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+
+def _axis_name(class_name: str) -> str:
+    """Tên trục = snake_case của tên Enum, KHÔNG phải `lower()` trần.
+
+    `lower()` nuốt ranh giới từ: `PaymentMethod` → `paymentmethod`, trong khi
+    `zones.yaml` (và mọi predicate zone do người viết) dùng `payment_method`.
+    Hai cách viết cùng một trục là cách kinh điển để tập chặn IM LẶNG rỗng —
+    predicate không khớp key nào nên mọi ô rơi về catch-all, và không có gì
+    báo rằng zone rủi ro chưa từng được điền.
+    """
+    return _CAMEL_BOUNDARY.sub("_", class_name).lower()
+
+
+def discover_axes(root: Path) -> Axes:
+    """Đọc Enum trong mã nguồn để dựng trục. Deterministic, không hỏi mô hình.
+
+    Trục là MẪU SỐ của toàn bộ phần chấm điểm phía sau. Để mô hình sinh mẫu số
+    nghĩa là mẫu số đổi giữa hai lượt chạy trên cùng một repo, và mọi tỉ lệ phía
+    sau mất khả năng so sánh.
+    """
+    import ast
+
+    axes = Axes()
+    for py in sorted(root.rglob("*.py")):
+        if "test" in py.parts or py.name.startswith("test_"):
+            continue
+        try:
+            tree = ast.parse(py.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            bases = {getattr(b, "id", getattr(b, "attr", "")) for b in node.bases}
+            is_enum = any("Enum" in b for b in bases) or node.name.endswith(_ENUM_HINTS)
+            if not is_enum:
+                continue
+            members = [
+                t.id.lower()
+                for stmt in node.body
+                if isinstance(stmt, ast.Assign)
+                for t in stmt.targets
+                if isinstance(t, ast.Name) and not t.id.startswith("_")
+            ]
+            if len(members) >= 2:
+                axis = _axis_name(node.name)
+                axes.values[axis] = members
+                axes.source[axis] = f"{py.relative_to(root)}::{node.name}"
+    return axes
+
+
+# --------------------------------------------------------------------------
+# Quan sát
+# --------------------------------------------------------------------------
+
+
+def observe_cells(
+    axes: Axes,
+    *,
+    zones: list[Mapping[str, Any]],
+    blocking_w: float,
+    observations: Mapping[tuple[str, ...], Mapping[str, Any]] | None = None,
+    mutation: Mapping[str, Any] | None = None,
+) -> list[Cell]:
+    """Liệt kê ô rồi chiếu band cho từng ô.
+
+    Ô không có quan sát nào KHÔNG biến mất — nó thành `unknown`. Ô biến mất là
+    ô rời khỏi mẫu số, và mẫu số nhỏ đi thì mọi tỉ lệ đẹp lên mà không ai làm gì.
+
+    `mutation` là artifact mutation precomputed (hoặc None). Nó chỉ được tiêm vào
+    ô THUỘC zone mà artifact khai, và chỉ khi ô ấy đã có quan sát — một ô chưa có
+    test không thể được nâng band bằng một verdict mutation.
+    """
+    if axes.size() < 2:
+        raise CertusError(
+            f"chỉ tìm được {axes.size()} trục rủi ro — dưới 2 trục thì không có "
+            "cặp nào để phủ, và mọi con số grid phía sau vô nghĩa"
+        )
+    obs = observations or {}
+    # Axis lock = thứ tự KHÁM PHÁ, không phải sorted. discover_axes duyệt tệp
+    # theo đường dẫn đã sắp nên thứ tự này ổn định giữa hai lượt chạy, và
+    # enumerate_t_wise sinh tên trục theo đúng thứ tự đó.
+    axis_lock = list(axes.values)
+    cells: list[Cell] = []
+    for names, values in enumerate_t_wise(axes.values, t=2):
+        cid = make_cell_id((names, values), axis_lock)
+        combo = dict(zip(names, values, strict=True))
+        zone = require_zone(combo, zones)
+        observation = lookup(obs, values) if obs else None
+        if mutation is not None and observation is not None:
+            mrun = mutation_run_for_cell(
+                mutation, zone_id=str(zone["id"]), cell_id=cid
+            )
+            if mrun is not None:
+                # Bản sao — không vá vào bảng quan sát dùng chung: cùng một
+                # value-tuple có thể tra ra cho nhiều ô, và chỉ ô đúng zone mới
+                # được mang mutation_run.
+                observation = {
+                    **observation,
+                    "mutation_run": mrun,
+                    "calibration_seed_id": mrun["seed_id"],
+                }
+        cells.append(
+            project_cell(
+                cell_id=cid,
+                axes=combo,
+                zone=zone,
+                blocking_w=blocking_w,
+                observation=observation,
+            )
+        )
+    return cells
+
+
+def _analyze_nonce(req: AnalyzeRequest) -> str:
+    """Nonce TẤT ĐỊNH theo (repo, câu hỏi).
+
+    Nonce đi vào prompt, prompt đi vào `cassette_key` (hash cả messages). Một
+    nonce ngẫu nhiên làm MỌI lượt chạy ra một khoá khác nhau → cassette không
+    bao giờ hit → replay chết, và cả kiến trúc cassette-mặc-định sụp. Tất định
+    theo (target/upload_id, question) giữ replay chạy được, mà vẫn là một giá
+    trị mô hình phải chép lại đúng để chứng minh nó đã đọc khối chỉ thị này.
+    """
+    seed = f"{req.target or req.upload_id}|{req.question}"
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
+
+
+def _format_artifacts(coverage: CoverageOut) -> str:
+    """Gói các con số ĐÃ TÍNH thành khối chữ cho mô hình DIỄN GIẢI.
+
+    Luật số 3 của luồng: model đọc số, không tính số. Ba tầng mẫu số đứng cạnh
+    nhau và không gộp — đúng thứ prompt dặn model giữ nguyên.
+    """
+    lines: list[str] = []
+    if coverage.line is not None:
+        iv = coverage.line.interval
+        lines.append(
+            f"- Line coverage: {coverage.line.k}/{coverage.line.n} = "
+            f"{coverage.line.point:.1%}, Wilson [{iv.lower:.3f}, {iv.upper:.3f}]"
+        )
+    lines.append(
+        f"- Grid coverage: {coverage.grid.k}/{coverage.grid.n} = "
+        f"{coverage.grid.point:.1%} ô rủi ro đã phủ"
+    )
+    lines.append(
+        f"- Ô N/A: {coverage.cells_na} · ô unknown: {coverage.cells_unknown} · "
+        f"tổng {coverage.cells_total} ô"
+    )
+    for z in coverage.per_zone:
+        lines.append(
+            f"- Zone {z.zone_id} (w={z.weight}): score={z.score:.3f} trên "
+            f"{z.cells_scoreable}/{z.cells_total} ô chấm được"
+        )
+    return "\n".join(lines)
+
+
+def rate(name: str, k: int, n: int, *, conf: float = 0.95) -> RateOut:
+    """Gói một tỉ lệ kèm mẫu số và khoảng. Không có lối đi tắt trả float trần."""
+    if n <= 0:
+        raise CertusError(
+            f"tỉ lệ {name!r} có mẫu số 0 — không có phép tính nào cứu được điều đó"
+        )
+    iv = interval(k, n, conf=conf, method="wilson")
+    flags: list[str] = []
+    if n < 10:
+        flags.append("n-too-small")
+    if iv.upper - iv.lower > 0.30:
+        flags.append("interval-wide")
+    if getattr(iv, "saturated", False):
+        flags.append("interval-saturated")
+    return RateOut(
+        name=name,
+        k=k,
+        n=n,
+        point=k / n,
+        interval=iv if isinstance(iv, Interval) else Interval(**dict(iv)),
+        flags=flags,
+    )
+
+
+# --------------------------------------------------------------------------
+# Luồng
+# --------------------------------------------------------------------------
+
+#: Chữ đọc được cho mỗi cờ. Hợp đồng bắt cảnh báo hiện thành CÂU, không phải
+#: mã — một mã bắt người đọc tra bảng, và trong thực tế họ không tra.
+_WARNING_TEXT = {
+    "n-too-small": "mẫu số quá nhỏ để kết luận: khoảng tin cậy rộng hơn chính con số",
+    "interval-wide": "khoảng tin cậy rộng hơn 30 điểm phần trăm — con số này chưa nói được gì",
+    "interval-saturated": "khoảng đã tràn ra ngoài [0,1] rồi bị cắt về; đừng đọc nó như một khoảng hẹp",
+}
+
+STAGES = (
+    "resolve_target",
+    "apply_data_policy",
+    "discover_axes",
+    "run_tests",
+    "read_coverage",
+    "project_grid",
+    "rollup",
+    "run_gates",
+    "explain",
+)
+
+
+@dataclass
+class PipelineResult:
+    response: AnalyzeResponse
+    events: list[StreamEvent] = field(default_factory=list)
+
+
+class Pipeline:
+    """Chạy một lượt phân tích và phát sự kiện dọc đường.
+
+    Được viết ở dạng async generator để UI thấy tiến trình thay vì một vòng
+    xoay bốn phút. Một tiến trình không quan sát được thì mọi lỗi trong nó
+    trông giống hệt nhau: "chậm".
+    """
+
+    def __init__(self, settings: Settings | None = None) -> None:
+        self.cfg = settings or default_settings
+        self._seq = 0
+
+    def _event(self, kind: str, trace_id: str, **payload: Any) -> StreamEvent:
+        self._seq += 1
+        return StreamEvent(seq=self._seq, kind=kind, trace_id=trace_id, payload=payload)
+
+    def _step(self, trace_id: str, name: str, status: str = "done", **extra: Any):
+        """Một bước của luồng. `step` là số thứ tự trong STAGES, không phải số đếm
+        tự do: hai lượt chạy phải đánh số cùng một bước giống nhau."""
+        return self._event(
+            "step", trace_id,
+            step=STAGES.index(name) + 1 if name in STAGES else 0,
+            name=name, status=status, **extra,
+        )
+
+    def _log(self, trace_id: str, level: str, msg: str):
+        return self._event("log", trace_id, level=level, msg=msg)
+
+    def resolve_target(self, req: AnalyzeRequest) -> Path:
+        if bool(req.target) == bool(req.upload_id):
+            raise CertusError(
+                "phải có ĐÚNG một trong `target` và `upload_id`. Nhận cả hai (hoặc "
+                "không cái nào) là để ngỏ chuyện nội dung người dùng tải lên được "
+                "đối xử như repo mẫu đáng tin"
+            )
+        if req.target:
+            root = (self.cfg.targets_dir / req.target).resolve()
+            if self.cfg.targets_dir.resolve() not in root.parents:
+                raise CertusError(f"target {req.target!r} nằm ngoài thư mục repo mẫu")
+        else:
+            root = (self.cfg.workspace_dir / str(req.upload_id)).resolve()
+            # Nhánh `target` kiểm chứa, nhánh này thì KHÔNG — cùng một lỗ hổng
+            # đã vá cho `target`: `upload_id="../../fixtures/targets/payments"`
+            # resolve() thoát khỏi workspace rồi pytest chạy trên thư mục bất kỳ
+            # (→ code-exec). upload_id là chuỗi client gửi tự do, phải bị chặn
+            # đúng như target.
+            if self.cfg.workspace_dir.resolve() not in root.parents:
+                raise CertusError(
+                    f"upload_id {req.upload_id!r} nằm ngoài thư mục workspace"
+                )
+        if not root.is_dir():
+            raise CertusError(f"không có thư mục {root}")
+        return root
+
+    async def run(self, req: AnalyzeRequest) -> AsyncIterator[StreamEvent]:
+        started = time.time()
+        final: dict[str, Any] | None = None
+        with tracing.start_trace() as trace_id:
+            try:
+                async for ev in self._run_inner(req, trace_id):
+                    # `done` phải đếm claims thật và blocked thật, không phải
+                    # hằng số 0/False như khi tầng agent còn chưa nối. Đọc lại
+                    # từ step `explain` cuối cùng — chỗ duy nhất giữ response.
+                    if (
+                        ev.kind == "step"
+                        and ev.payload.get("name") == "explain"
+                        and "response" in ev.payload
+                    ):
+                        final = ev.payload["response"]
+                    yield ev
+            except CertusError as exc:
+                # Lỗi có cấu trúc đi ra bằng đúng dòng stream, không nuốt.
+                yield self._event(
+                    "error", trace_id, code=type(exc).__name__, msg=str(exc)
+                )
+                return
+            yield self._event(
+                "done", trace_id,
+                claims=len(final["claims"]) if final else 0,
+                blocked=(final["verdict"] == "blocked") if final else False,
+                elapsed_s=round(time.time() - started, 3),
+            )
+
+    async def _run_inner(
+        self, req: AnalyzeRequest, trace_id: str
+    ) -> AsyncIterator[StreamEvent]:
+        yield self._log(trace_id, "INFO", f"bắt đầu phân tích {req.target or req.upload_id}")
+
+        yield self._step(trace_id, "resolve_target", "running")
+        root = self.resolve_target(req)
+        yield self._step(trace_id, "resolve_target", path=str(root))
+
+        # Chính sách dữ liệu chạy TRƯỚC mọi thứ chạm tới mô hình.
+        policy = load_policy()
+        sent, held = [], {}
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            rel = str(path.relative_to(root))
+            decision = policy.decide(rel)
+            (sent.append(rel) if decision.allowed else held.setdefault(rel, decision.reason))
+        yield self._step(
+            trace_id, "apply_data_policy",
+            files_sent=len(sent), files_held=len(held),
+        )
+
+        axes = discover_axes(root)
+        yield self._step(
+            trace_id, "discover_axes",
+            axes={k: len(v) for k, v in axes.values.items()}, source=axes.source,
+        )
+
+        # load_zone_config đã compile sẵn — không ai được cầm rules chưa compile.
+        zone_cfg = load_zone_config()
+        blocking_w = zone_cfg.blocking_w
+        cfg_zones = zone_cfg.rules
+        tests = scan_tests(root)
+        suite_exit, cov_suite, (lines_hit, lines_total) = run_target_suite(root)
+        yield self._step(
+            trace_id, "run_tests",
+            test_functions=len(tests), exit_code=suite_exit,
+            lines_covered=len(cov_suite),
+            lines_hit=lines_hit, lines_total=lines_total,
+        )
+        obs_table = observations_for_cells(
+            tests,
+            code_path=self.cfg.__dict__.get("entry_symbol", "checkout"),
+            cov_suite=cov_suite,
+            suite_exit_code=suite_exit,
+        )
+        # Mutation replay: chỉ cho repo mẫu (target), không cho upload — upload
+        # chưa từng qua lượt mutmut của host nên KHÔNG có artifact, và đó là
+        # fail-closed đúng, không phải thiếu sót.
+        mutation_artifact = (
+            load_mutation_artifact(req.target, self.cfg.mutations_dir)
+            if req.target
+            else None
+        )
+        cells = observe_cells(
+            axes,
+            zones=cfg_zones,
+            blocking_w=blocking_w,
+            observations=obs_table,
+            mutation=mutation_artifact,
+        )
+        for c in cells[:200]:
+            yield self._event("cell", trace_id, cell=c.model_dump(mode="json"))
+        yield self._step(trace_id, "project_grid", cells=len(cells))
+
+        band_scores = load_band_scores()
+        rw = risk_weighted_coverage(cells, band_scores)
+        per_zone = min_per_zone(cells, band_scores)
+        yield self._step(trace_id, "rollup", risk_weighted=rw, zones=len(per_zone))
+
+        covered = sum(1 for c in cells if c.band in (Band.HIGH, Band.MED))
+        scoreable = sum(1 for c in cells if c.band is not Band.NA)
+        grid_rate = rate("grid_coverage", covered, max(scoreable, 1))
+
+        line_rate = (
+            rate("line_coverage", lines_hit, lines_total) if lines_total else None
+        )
+
+        coverage = CoverageOut(
+            line=line_rate,
+            grid=grid_rate,
+            risk_weighted=rw,
+            per_zone=[
+                ZoneOut(
+                    zone_id=zid,
+                    weight=float(z["w"]),
+                    # Khoá phải khớp ĐÚNG cái min_per_zone trả ra (worst_score,
+                    # cells_scored). Đọc `.get("min_score", 0.0)` từng nuốt lỗi
+                    # bằng default: sai khoá vẫn ra 0.0 nên score mọi zone luôn
+                    # 0.0 mà không ai thấy. Index thẳng để sai khoá thì nổ.
+                    score=float(z["worst_score"]),
+                    cells_total=int(z["cells_total"]),
+                    cells_scoreable=int(z["cells_scored"]),
+                )
+                for zid, z in per_zone.items()
+            ],
+            cells=cells,
+            cells_total=len(cells),
+            cells_na=sum(1 for c in cells if c.band is Band.NA),
+            cells_unknown=sum(1 for c in cells if c.band is Band.UNKNOWN),
+            confidence=grid_rate.point,
+        )
+
+        # ── giai đoạn DIỄN GIẢI: mô hình ĐỌC số, code đã TÍNH xong ──────────
+        # Đây là chỗ DUY NHẤT tầng agent chạm pipeline. Khối này từng bị bỏ
+        # trống (claims=[], gates=[], verdict="inconclusive"), nên mọi lỗi sống
+        # ở đường LLM→claim (confabulation, truncation, nhãn-từ-tool, tất định,
+        # cá nhân hoá) không có đường nào biểu hiện. Lỗi ở bước này KHÔNG làm
+        # hỏng phần số: coverage vẫn ra, chỉ phần diễn giải khuyết kèm cảnh báo.
+        yield self._step(trace_id, "explain", "running")
+        nonce = _analyze_nonce(req)
+        kb_context = build_context(req.question)
+        with PersonaStore(settings=self.cfg) as pstore:
+            persona = pstore.persona_block(req.user_id)
+        prompt = render_prompt(
+            "analyze",
+            QUESTION=req.question,
+            KB_CONTEXT=kb_context or "(không đoạn KB nào khớp câu hỏi)",
+            ARTIFACTS=_format_artifacts(coverage),
+            PERSONA=persona or "(chưa có ngữ cảnh cá nhân hoá cho người dùng này)",
+            NONCE=nonce,
+        )
+        system = load_prompt("system")
+        # KHÔNG truyền tools vào lượt gọi này — CÓ CHỦ ĐÍCH. Bước diễn giải là
+        # single-shot để cassette tất định (1000 sinh viên replay đồng thời, một
+        # khoá ổn định cho mỗi (repo, câu hỏi)). Model THẬT được cấp tool sẽ dừng
+        # ở `stop_reason=tool_use` chờ kết quả rồi mới nói tiếp — mà luồng này
+        # không có vòng lặp tool, nên nó dừng với text RỖNG và không claim nào ra.
+        # Prompt vẫn khung tool về mặt khái niệm (bug "only a tool promotes a
+        # claim" nằm ở chỗ model TỰ dán nhãn OBSERVED không có tool nào phong),
+        # và có sẵn nhánh "nếu tool không khả dụng thì tự tính" — nên model tính
+        # trực tiếp rồi trả đúng một object JSON như phần 'Định dạng trả lời' đòi.
+
+        claims: list[Claim] = []
+        llm_warnings: list[str] = []
+        span = tracing.llm_span("analyze.explain")
+        client = LLMClient(self.cfg)
+        try:
+            resp = await client.complete(
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+                cassette_hint="analyze",
+            )
+            for chunk in resp.chunks or ([resp.text] if resp.text else []):
+                yield self._event("token", trace_id, text=chunk)
+            span.finish(
+                status="ok", from_cassette=resp.from_cassette,
+                model=resp.model, stop_reason=resp.stop_reason,
+                tool_uses=len(resp.tool_uses),
+            )
+            parsed = extract_claims_json(resp.text)
+            if str(parsed.get("nonce")) != nonce:
+                # Nonce là cửa chống trả-lời-lạc: câu trả lời không chép đúng
+                # nonce có thể là của một prompt khác (hoặc bị bơm), không đọc.
+                llm_warnings.append(
+                    "câu trả lời của mô hình thiếu hoặc sai nonce — bỏ không đọc"
+                )
+            else:
+                # parse_claims dựng bằng model_construct (bỏ validator — đó là
+                # bug nhãn-từ-tool). Pipeline TUYỆT ĐỐI không được sập vì một
+                # câu trả lời dị dạng: validate lại từng claim, cái nào validator
+                # của chính hệ từ chối thì loại kèm cảnh báo (chính sự bất nhất
+                # "parser nhận, validator chối" là thứ tầng B cần phơi), cái nào
+                # hợp lệ — kể cả OBSERVED không do tool phong — vẫn tới output.
+                for c in parse_claims(parsed):
+                    try:
+                        Claim.model_validate(c.model_dump())
+                    except ValidationError as exc:
+                        detail = exc.errors()[0].get("msg", "") if exc.errors() else ""
+                        llm_warnings.append(
+                            f"claim {c.id!r} dị dạng, không hiển thị: {detail}"
+                        )
+                        continue
+                    claims.append(c)
+        except CassetteMissError:
+            span.finish(status="error", error="cassette_miss")
+            llm_warnings.append(
+                "chưa có cassette cho bước diễn giải ở repo/câu hỏi này; chạy một "
+                "lượt `CERTUS_LLM_MODE=record` để sinh, hoặc đặt CERTUS_LLM_MODE=live "
+                "kèm khoá API"
+            )
+        except (ClaimParseError, ConfigError) as exc:
+            span.finish(status="error", error=type(exc).__name__)
+            llm_warnings.append(f"không đọc được câu trả lời của mô hình: {exc}")
+        tracing.emit(span)
+        yield self._event("span", trace_id, span=span.to_row().model_dump(mode="json"))
+        for c in claims:
+            yield self._event("claim", trace_id, claim=c.model_dump(mode="json"))
+
+        # ── gate: sàn grid per-zone — cổng tự nhiên của luồng analyze ───────
+        floor_verdicts = evaluate_floor(per_zone, load_floors())
+        blocking_failures = [
+            zid for zid, v in floor_verdicts.items()
+            if per_zone[zid]["w"] >= blocking_w and not v["meets_floor"]
+        ]
+        for zid, v in floor_verdicts.items():
+            yield self._event(
+                "gate", trace_id, zone_id=zid,
+                blocking=per_zone[zid]["w"] >= blocking_w, **v,
+            )
+        blocked = bool(blocking_failures)
+        verdict = "blocked" if blocked else ("pass" if claims else "inconclusive")
+
+        response = AnalyzeResponse(
+            run_id=trace_id,
+            trace_id=trace_id,
+            target=req.target or str(req.upload_id),
+            coverage=coverage,
+            claims=[ClaimOut(claim=c, supported_by=c.evidence_ids) for c in claims],
+            gates=[],
+            verdict=verdict,
+            files_sent_to_model=sent,
+            warnings=(
+                ([f"{len(held)} tệp bị giữ lại theo chính sách dữ liệu"] if held else [])
+                + llm_warnings
+            ),
+        )
+        # Cảnh báo phải ra thành sự kiện riêng, không nằm lẫn trong response —
+        # hợp đồng bắt mỗi cảnh báo hiện thành một DÒNG CHỮ trên UI, và một
+        # trường trong JSON thì không có gì buộc UI phải hiển thị nó.
+        for flag in (line_rate.flags if line_rate else []) + grid_rate.flags:
+            yield self._event(
+                "warning", trace_id, code=flag,
+                msg=_WARNING_TEXT.get(flag, flag),
+            )
+        for w in response.warnings:
+            yield self._event("warning", trace_id, code="data-policy", msg=w)
+
+        yield self._step(trace_id, "explain", response=response.model_dump(mode="json"))
+
+
+async def analyze(req: AnalyzeRequest, settings: Settings | None = None) -> PipelineResult:
+    """Chạy hết luồng và gom lại thành một kết quả — dùng cho CLI và test."""
+    pipe = Pipeline(settings)
+    events: list[StreamEvent] = []
+    response: AnalyzeResponse | None = None
+    async for ev in pipe.run(req):
+        events.append(ev)
+        if (
+            ev.kind == "step"
+            and ev.payload.get("name") == "explain"
+            and "response" in ev.payload
+        ):
+            # Bước `explain` phát hai lần: `status="running"` (chưa có response)
+            # rồi bước đóng kèm `response`. Chỉ đọc cái sau.
+            response = AnalyzeResponse.model_validate(ev.payload["response"])
+        if ev.kind == "error":
+            raise CertusError(ev.payload["msg"])
+    if response is None:
+        raise CertusError("luồng kết thúc mà không sinh ra kết quả nào")
+    return PipelineResult(response=response, events=events)
+
+
+def run_target_suite(root: Path) -> tuple[int, set[str], tuple[int, int]]:
+    """Chạy bộ kiểm của repo đích và đọc lại phần nó đã chạm.
+
+    Đi qua `core/exec/runner` chứ không gọi `subprocess` thẳng: đó là chỗ duy
+    nhất có allowlist và có ghi sổ bằng chứng. Một lối chạy thứ hai, dù chỉ để
+    tiện, là một lối vòng qua cả hai thứ đó.
+    """
+    from app.core.exec.runner import run_probe
+
+    result = run_probe(root, ["coverage", "run", "-m", "pytest", "-q"])
+    covered: set[str] = set()
+    lines_hit = 0
+    lines_total = 0
+    data_file = root / ".coverage"
+    if data_file.exists():
+        try:
+            # Dùng `analysis2()` của chính coverage.py chứ không tự đếm câu lệnh:
+            # nó biết dòng nào CHẠY ĐƯỢC, dòng nào bị `# pragma: no cover`, dòng
+            # nào chỉ là tiếp nối của câu lệnh trước. Bản tự đếm bằng AST của tôi
+            # từng cho ra 444/444 = 100% vì nhánh parse nổ rồi rơi về
+            # `total = hit` — mẫu số bằng tử số thì tỉ lệ luôn đẹp.
+            from coverage import Coverage
+
+            cov = Coverage(data_file=str(data_file))
+            cov.load()
+            for measured in sorted(cov.get_data().measured_files()):
+                name = Path(measured).stem
+                if name.startswith("test_") or name == "conftest":
+                    # Bài kiểm không thuộc mẫu số của độ phủ: đo xem bài kiểm có
+                    # tự chạy hết chính nó không thì luôn ra gần 100%.
+                    continue
+                _fn, statements, _excluded, missing, _fmt = cov.analysis2(measured)
+                lines_total += len(statements)
+                lines_hit += len(statements) - len(missing)
+                covered.add(name)
+                for line_no in set(statements) - set(missing):
+                    covered.add(f"{name}:{line_no}")
+        except Exception:  # noqa: BLE001 — thiếu coverage không được làm chết luồng
+            lines_hit = lines_total = 0
+
+    # Tên hàm cấp module cũng được coi là "đã chạm", để `code_path` tra được
+    # bằng tên hàm thay vì bằng số dòng.
+    for py in root.rglob("*.py"):
+        if py.stem.startswith("test_"):
+            continue
+        try:
+            import ast as _ast
+
+            for node in _ast.walk(_ast.parse(py.read_text(encoding="utf-8"))):
+                if isinstance(node, _ast.FunctionDef) and py.stem in covered:
+                    covered.add(node.name)
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+    # Không bao giờ để hit > total: nếu xảy ra thì mẫu số sai, và một tỉ lệ
+    # trên 100% là dấu hiệu đầu tiên nhìn thấy được của chuyện đó.
+    lines_total = max(lines_total, lines_hit)
+    return result.exit_code, covered, (lines_hit, lines_total)

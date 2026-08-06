@@ -1,0 +1,57 @@
+# Zone — chiều thứ hai của lưới: mô hình rủi ro, có trọng số, first-match-wins.
+#
+# (i)   CHỖ Ở DUY NHẤT của blocking_w, hot_w và toàn bộ tập rule. Không hằng số
+#       ngưỡng nào trong code; thiếu khoá ở đây thì zones.py raise ConfigError
+#       nêu đích danh tên khoá, không rơi về default.
+# (ii)  SUY RA TỪ: research note 02 §2.3 (zones.blocking_w / zones.hot_w) và
+#       system-design §7. Hai con số 0.7 / 0.85 là MINH HOẠ lấy từ tài liệu nền,
+#       CHƯA qua kiểm độ nhạy — không được trích dẫn như một ngưỡng đã đo.
+# (iii) XEM LẠI KHI: (a) số zone thay đổi; (b) có ≥1 lượt chạy mà tập chặn rỗng
+#       hoặc chỉ còn đúng một zone; (c) false_high_rate của một zone chặn vượt
+#       ngưỡng calibration — lúc đó w của zone đó đang nói sai về rủi ro thật.
+#
+# QUYỀN GHI: chỉ role `admin` (system-design §7, luật B18 —
+# "the graded party must not be able to empty the blocking set").
+
+# Sàn để một zone thuộc RELEASE-BLOCKING SET.
+blocking_w: 0.7
+
+# Sàn để một zone là HOT (được escalate lên escalation_degree).
+# Luôn phải >= blocking_w: "hot" là tập con của "blocking", không phải trục khác.
+hot_w: 0.85
+
+# THỨ TỰ DƯỚI ĐÂY LÀ MỘT QUYẾT ĐỊNH, KHÔNG PHẢI TRÌNH BÀY.
+# match_zone duyệt từ trên xuống và trả về rule ĐẦU TIÊN khớp. Đảo hai rule cùng
+# có thể khớp một ô thì ô đó thật sự đổi zone, đổi w, và có thể rời khỏi tập chặn.
+# Rule catch-all phải nằm CUỐI; đưa nó lên trên làm mọi rule dưới nó chết lặng.
+rules:
+  # Đường tiền thật. Mọi ô chạm nhánh này phải có mutant bị giết mới được `high`.
+  - id: payment_critical
+    when:
+      payment_method: [card, wallet]
+    w: 0.95
+
+  # Lỗi thứ tự thi hành: không nằm trong dòng code nào, mutation không cấy được
+  # vào một thứ không phải là mã (note 02 §4.2) — nên nó phải nặng ở chiều zone.
+  - id: concurrency
+    when:
+      interleaving: [overlapping_reads, writer_first, reader_first]
+    w: 0.88
+
+  # Luồng checkout: chưa tới mức tiền thật nhưng vẫn trong tập chặn.
+  - id: checkout_core
+    when:
+      cart_state: [checkout, paid]
+    w: 0.75
+
+  - id: catalog_browse
+    when:
+      cart_state: [empty, browsing]
+    w: 0.35
+
+  # Catch-all: `when` rỗng khớp MỌI ô. Nó tồn tại để bảng zone TOÀN PHẦN —
+  # một ô không thuộc zone nào là một ô không có trọng số, tức một ô lặng lẽ
+  # rơi khỏi mọi phép tính. Thà nó vào zone rẻ tiền còn hơn biến mất.
+  - id: catch_all
+    when: {}
+    w: 0.20

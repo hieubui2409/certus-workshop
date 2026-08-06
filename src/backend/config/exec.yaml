@@ -1,0 +1,127 @@
+# Ngưỡng của tầng thực thi — runner · coverage_reader · mutate · calibrate.
+#
+# Mọi khoá ở đây bắt buộc mang đủ BA VẾ (docs/design/sdd/00-index.md §4):
+#   (i)   chỗ ở duy nhất  — không hằng số nào tương ứng nằm trong code
+#   (ii)  suy ra từ đâu   — nguồn của con số
+#   (iii) điều kiện xem lại — khi nào phải nhìn lại nó
+#
+# Thiếu một khoá ⇒ ConfigError nêu đích danh tên khoá và dừng. Không có nhánh
+# nào âm thầm rơi về default: một default trong code là một ngưỡng mất vế (ii)
+# và (iii), và không ai còn biết con số đó từ đâu ra sau ba tháng.
+
+runner:
+  # Danh sách biến môi trường được đi xuyên vào tiến trình probe.
+  # (i)   Đây là chỗ ở duy nhất của danh sách này.
+  # (ii)  Suy ra từ: mức tối thiểu để `pytest`/`coverage` khởi động được trên
+  #       một máy Linux/macOS sạch — PATH để tìm được interpreter, HOME để các
+  #       công cụ đọc được cache và cấu hình người dùng, LANG/LC_ALL để output
+  #       không đổi theo locale, TERM để thư viện màu không nổ khi không có tty.
+  # (iii) Xem lại khi: thêm một chế độ sandbox mới, hoặc khi một probe hợp lệ
+  #       fail vì thiếu biến môi trường (thêm biến vào đây, KHÔNG đổi code).
+  env_passthrough:
+    - PATH
+    - HOME
+    - LANG
+    - LC_ALL
+    - TERM
+
+  # Trần dung lượng output giữ lại từ một lượt chạy, tính bằng byte.
+  # (i)   Chỗ ở duy nhất.
+  # (ii)  Suy ra từ: 256 KiB đủ chứa toàn bộ output của một lượt pytest vài trăm
+  #       test kèm traceback. Đây là con số MINH HOẠ, chưa qua kiểm độ nhạy —
+  #       chưa đo phân bố độ dài output thật trên ba repo mẫu.
+  # (iii) Xem lại khi: xuất hiện lượt chạy bị cắt output (record ledger sẽ mang
+  #       cờ output-truncated), hoặc khi bộ nhớ tiến trình web tăng bất thường.
+  max_output_bytes: 262144
+
+  docker:
+    # Trần tài nguyên của container probe.
+    # (i)   Chỗ ở duy nhất của ba trần này.
+    # (ii)  Suy ra từ: một lượt pytest + coverage trên repo mẫu cỡ vài nghìn
+    #       dòng. 512 MiB là mức MINH HOẠ; 256 process đủ cho pytest-xdist mặc
+    #       định; 64 MiB tmpfs đủ cho .pytest_cache và file tạm vì mount workspace
+    #       là read-only nên mọi thứ ghi ra đều rơi vào /tmp.
+    # (iii) Xem lại khi: có repo mẫu mới lớn hơn, hoặc khi thấy container bị
+    #       OOM-kill (exit 137) — một OOM đọc y hệt một test fail nếu không nhìn
+    #       exit code, nên đây là ngưỡng phải theo dõi chứ không phải đặt rồi quên.
+    mem_limit: "512m"
+    pids_limit: 256
+    tmpfs_size_bytes: 67108864
+
+coverage:
+  # Số file tối thiểu phải có mặt trong một coverage report thì report đó mới
+  # được coi là một phép đo.
+  # (i)   Chỗ ở duy nhất.
+  # (ii)  Suy ra từ: research note 02 §8.9 — "the probe script alone — five lines
+  #       of it — was enough to collapse the whole grid to unknown. One --source
+  #       flag was the difference between a working measurement and no
+  #       measurement." Một report chứa 0 file là lỗi cấu hình, không phải
+  #       coverage 0%. Đặt 1 là mức thấp nhất còn phân biệt được hai thứ đó.
+  # (iii) Xem lại khi: biết trước SUT có bao nhiêu module — lúc đó nâng lên để
+  #       bắt luôn ca "report đúng format nhưng chỉ scope trúng một file".
+  min_files_in_report: 1
+
+mutation:
+  # Trần thời gian cho MỘT lượt `python -m mutmut run`, tính bằng giây.
+  # (i)   Chỗ ở duy nhất. settings.probe_timeout_seconds là trần cho một probe
+  #       thường; mutation chạy lại bộ kiểm nhiều lần nên có trần riêng.
+  # (ii)  Suy ra từ: 15 phút — mức MINH HOẠ cho repo mẫu trong workshop, chưa đo
+  #       trên repo người dùng tải lên.
+  # (iii) Xem lại khi: có lượt chạy chạm trần (mutant sẽ vào `unresolved` với
+  #       status timeout, KHÔNG vào `survived`), hoặc khi đổi số mutant/lượt.
+  timeout_seconds: 900
+
+  # Số tiến trình con mutmut được phép chạy song song.
+  # (i)   Chỗ ở duy nhất.
+  # (ii)  Suy ra từ: 4 là mức an toàn trên máy sinh viên 4-8 core khi backend
+  #       vẫn đang phục vụ HTTP. Không lấy os.cpu_count() vì con số đó thay đổi
+  #       theo máy và làm hai lượt chạy không so được với nhau.
+  # (iii) Xem lại khi: chuyển sang chạy mutation trên worker riêng.
+  max_children: 4
+
+  # Tỉ lệ lấy mẫu mutant ở zone KHÔNG chặn.
+  # (i)   Chỗ ở duy nhất.
+  # (ii)  Suy ra từ: research note 02 §4.1 — zone chặn phải kiểm MỌI ô high, zone
+  #       không chặn thì lấy mẫu theo calibrate.sample_rate và chọn bằng seed.
+  #       0.25 là mức MINH HOẠ, chưa qua kiểm độ nhạy.
+  # (iii) Xem lại khi: false_high_rate ở zone không chặn khác biệt rõ so với zone
+  #       chặn — đó là dấu hiệu cỡ mẫu đang che một khác biệt thật.
+  sample_rate: 0.25
+
+calibration:
+  # Tỉ lệ ô đã bị gọi là high/N-A/pruned được hồi sinh để đo lại.
+  # (i)   Chỗ ở duy nhất.
+  # (ii)  Suy ra từ: research note 02 §4.3 — "hồi sinh ~10% cell đã bị gọi là
+  #       high/N-A/pruned".
+  # (iii) Xem lại khi: false_high_rate vượt ngưỡng chặn (lúc đó cần cỡ mẫu lớn
+  #       hơn để nói được gì), hoặc khi tổng số ô nhỏ tới mức 10% ra dưới 1 ô.
+  revive_fraction: 0.10
+
+  # Độ tin cậy và phương pháp của khoảng tin cậy gắn kèm mọi tỉ lệ.
+  # (i)   Chỗ ở duy nhất. app/core/stats/intervals.py KHÔNG được có default riêng.
+  # (ii)  Suy ra từ: research note 01 — Wilson là mặc định cho tỉ lệ nhị thức ở
+  #       cỡ mẫu nhỏ; 0.95 là quy ước, không phải kết quả đo.
+  # (iii) Xem lại khi: cần so hai candidate (lúc đó dùng McNemar, không phải hai
+  #       interval rời), hoặc khi cỡ mẫu đủ lớn để Clopper-Pearson không còn quá
+  #       bảo thủ.
+  conf: 0.95
+  interval_method: wilson
+
+  # Cỡ mẫu tối thiểu để một tỉ lệ được phát biểu mà không kèm cờ n-too-small.
+  # (i)   Chỗ ở duy nhất.
+  # (ii)  Suy ra từ: DEBTS.md M1 — bản ghi gốc là {"killed":0,"survived":2,
+  #       "rate":1.0}; "đo trên cỡ mẫu 2 thì chưa nói được gì". 30 là quy ước
+  #       MINH HOẠ, chưa đo trên dữ liệu của CERTUS. Cờ này KHÔNG thay thế
+  #       interval — nó chỉ nói thẳng ra điều interval đã nói bằng số.
+  # (iii) Xem lại khi: có đủ lượt chạy thật để biết phân bố cỡ mẫu thực tế.
+  min_sample_size: 30
+
+  # Ngưỡng false_high_rate làm stop gate (b) chặn.
+  # (i)   Chỗ ở duy nhất.
+  # (ii)  Suy ra từ: research note 02 §4.3 — "~15% is the threshold that changes
+  #       beam/theta". So sánh dùng BIÊN của Wilson chứ không dùng điểm ước
+  #       lượng: interval vắt ngang ngưỡng ⇒ inconclusive, và inconclusive
+  #       KHÔNG phải pass.
+  # (iii) Xem lại khi: có ≥1 lượt chạy mà verdict là inconclusive hai vòng liên
+  #       tiếp — đó là lúc phải tăng cỡ mẫu chứ không phải hạ ngưỡng.
+  false_high_block: 0.15

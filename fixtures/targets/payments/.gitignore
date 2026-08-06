@@ -1,0 +1,6 @@
+# .gitignore ở gốc repo workshop chặn mọi file `.env`. Repo mẫu này CẦN file
+# `.env` được commit thì demo data-policy mới chạy được ngay sau khi clone,
+# nên ở đây ta gỡ chặn đúng một file — và chỉ ở đúng thư mục này.
+#
+# Khoá trong `.env` là GIÁ TRỊ GIẢ, xem chú thích trong chính file đó.
+!.env

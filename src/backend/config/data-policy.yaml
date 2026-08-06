@@ -1,0 +1,65 @@
+# Chính sách dữ liệu — tệp nào của người dùng được gửi cho mô hình.
+#
+# (i)   Đây là CHỖ Ở DUY NHẤT của các ngưỡng dưới đây. Không hằng số nào trong
+#       code. Riêng DEFAULT_BLOCKLIST là hằng số code (policy/redaction.py) vì
+#       nó là sàn của chính sách, không phải một tham số vận hành.
+# (ii)  Suy ra từ: system-design.md §3.1 (biên tin cậy) + kịch bản repo mẫu
+#       payments/ trong workshop-plan.md §3.
+# (iii) Xem lại khi: thêm loại tệp mới vào repo mẫu, hoặc khi có ≥1 lượt chạy
+#       mà panel "tệp đã gửi cho mô hình" liệt kê một tệp không ai chờ đợi.
+
+# Ngưỡng kích thước một tệp được nạp vào payload.
+# (ii)  Suy ra từ: cửa sổ ngữ cảnh của claude-opus-5 chia cho số tệp trung bình
+#       của ba repo mẫu (≈40 tệp). 256 KiB là MINH HOẠ, chưa đo độ nhạy.
+# (iii) Xem lại khi: đổi model, hoặc khi có repo bị cắt mất tệp lõi.
+max_file_bytes: 262144
+
+# Phần mở rộng không có nội dung văn bản để phân tích.
+# (ii)  Suy ra từ: danh sách kiểu tệp thực tế gặp trong fixtures/targets/.
+# (iii) Xem lại khi: có định dạng mới xuất hiện trong repo sinh viên tải lên.
+binary_extensions:
+  - .png
+  - .jpg
+  - .jpeg
+  - .gif
+  - .pdf
+  - .zip
+  - .tar
+  - .gz
+  - .whl
+  - .so
+  - .dylib
+  - .dll
+  - .pyc
+  - .sqlite3
+
+# Bỏ .env khỏi blocklist để phân tích được file cấu hình mẫu (.env.example)
+# (ii)  Suy ra từ: repo mẫu payments/ có .env.example là một phần hồ sơ thiết
+#       kế — không đọc được nó thì gate requirements mất mẫu số.
+# (iii) Xem lại khi: repo mẫu đổi cách khai báo cấu hình.
+blocklist_override: ["*.pem", "*_secret*", "credentials*", "*.key"]
+
+# Mẫu chặn riêng của dự án, cộng thêm vào danh sách trên.
+# (ii)  Suy ra từ: quy ước đặt tên tệp nội bộ (id_rsa, *.p12, *.keystore).
+# (iii) Xem lại khi: đội đổi quy ước đặt tên tệp bí mật.
+blocklist_extra:
+  - "id_rsa*"
+  - "*.p12"
+  - "*.keystore"
+  - "*.pfx"
+
+# Ngoại lệ hẹp theo TÊN NGUYÊN VĂN. `reason` là bắt buộc, rỗng ⇒ ConfigError.
+# (ii)  Suy ra từ: DD-3 — một ngoại lệ không có lý do viết ra là ngoại lệ không
+#       ai dám gỡ, vì không ai còn biết nó có còn cần hay không.
+# (iii) Xem lại khi: mỗi lần kiểm kê quý, hoặc khi repo mẫu đổi.
+allowlist_exact:
+  - name: ".env.example"
+    reason: "khuôn mẫu cấu hình, chỉ chứa tên biến và giá trị giả"
+  - name: "requirements.txt"
+    reason: "danh sách phụ thuộc, cần cho gate design"
+
+# Chuỗi thay thế khi che bí mật theo nội dung. `{name}` là tên mẫu đã khớp.
+# (ii)  Suy ra từ: một dãy *** không phân biệt được "có bí mật ở đây" với
+#       "chỗ này vốn trống" — nhãn phải nói được đã che cái gì.
+# (iii) Xem lại khi: đổi công cụ đọc log.
+redact_placeholder: "[REDACTED:{name}]"

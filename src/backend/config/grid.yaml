@@ -1,0 +1,80 @@
+# Lưới: bậc tổ hợp, thang điểm band, tham số ToT axis search, tham số projection.
+#
+# (i)   CHỖ Ở DUY NHẤT của mọi con số dưới đây. core/grid/* không có hằng số
+#       ngưỡng nào; thiếu khoá ⇒ ConfigError nêu đích danh tên khoá, exit != 0.
+# (ii)  SUY RA TỪ: research note 02 §2.4 (bậc t-wise), §3.2 (band_scores),
+#       §5.1–§5.2 (theta/lambda/eps/beam/budget), §5.3 (escalation).
+#       Các giá trị tham chiếu trong note được ghi rõ là TUNABLE, không phải
+#       hằng số của phương pháp.
+# (iii) XEM LẠI KHI: số trục động vượt m_cap; false_high_rate vượt ~15%
+#       (note 02 §4.3 — "con số duy nhất nói cả cỗ máy có đáng tin không";
+#       chính nó là thứ đổi beam và theta); hoặc khi một lượt chạy chạm trần
+#       budget trước khi beam hội tụ.
+
+# ─────────── Bậc tổ hợp ───────────
+# HAI KHOÁ RIÊNG BIỆT, KHÔNG ĐƯỢC GỘP.
+# Đã đo: một khoá phục vụ cả hai việc làm cho chính sách "nền t=2, escalate lên
+# t=3 ở hot zone" trở nên KHÔNG DIỄN ĐẠT ĐƯỢC — trên một lượt chạy 4 trục với
+# khoá dùng chung ở t=2, cả bốn ứng viên escalation đều đã là ô của lưới nền,
+# nên bước escalate không thêm gì trong khi trông y như đã chạy.
+t_wise_degree: 2
+escalation_degree: 3
+
+# ─────────── Thang điểm band — DATA, không phải hằng số ───────────
+# N/A CỐ Ý KHÔNG CÓ ENTRY: nó bị loại khỏi cả tử lẫn mẫu, không bao giờ chấm 0.
+# "not applicable" không phải "rủi ro trung bình bằng không".
+# Thêm một hàng N/A vào đây là cách nhanh nhất để làm hỏng mẫu số.
+band_scores:
+  - {band: high, score: 1.0}
+  - {band: med, score: 0.6}
+  - {band: low, score: 0.2}
+  - {band: stub, score: 0.0}
+  - {band: unknown, score: 0.0}
+
+# ─────────── ToT axis search ───────────
+search:
+  # lambda của cost(A) = lambda * |cells(A)|.
+  lambda_cost: 0.02
+
+  # Sàn của rho. Dưới sàn ⇒ trục bị coi là dominated ⇒ QUARANTINE, không xoá.
+  theta_dominated: 0.35
+
+  # Mẫu số của rho nhỏ hơn eps ⇒ DegenerateMarginalError. Thà nổ còn hơn chia
+  # cho (gần) không rồi báo một con số vô nghĩa.
+  epsilon_marginal: 0.000001
+
+  # Progressive widening: rộng ở nông, hẹp khi sâu. Lịch nằm ở config,
+  # không bao giờ là hằng số trong harness.
+  shallow_width: 5
+  deep_width: 2
+  shallow_depth_limit: 2
+
+  # Trần cứng số trục động được khoá vào (m_cap của tài liệu nền).
+  max_dynamic_axes: 4
+
+  # Vượt tỉ lệ này trên BẤT KỲ cap nào ⇒ beam thu về đúng 1, bất kể lịch độ sâu:
+  # chế độ greedy anytime, giữ nguyên best-so-far.
+  greedy_threshold_fraction: 0.75
+
+  # Ba trần độc lập. <= 0 nghĩa là KHÔNG ÁP, không phải "đã cạn".
+  budget:
+    max_wall_clock_s: 120.0
+    max_nodes: 200
+    max_tokens_total: 200000
+
+# ─────────── Band projection ───────────
+projection:
+  # Số assert độc lập tối thiểu để một ô đủ tư cách xét `high`. Calibration có
+  # quyền SIẾT con số này lên (không bao giờ nới xuống); ô dưới bar đã siết rơi
+  # `med` kèm cờ high_bar_tightened chứ không im lặng giữ `high`.
+  min_independent_asserts_for_high: 2
+
+  # Một mutation binding phải đủ 5 trường mới được coi là bound. Thiếu trường
+  # nào thì record vẫn tồn tại nhưng KHÔNG neo được vào ô nào — và một record
+  # không neo được đọc y hệt một record hợp lệ nếu ta không đếm.
+  mutation_binding_fields:
+    - probe_sha256
+    - seed_id
+    - cell_id
+    - operator
+    - target_path

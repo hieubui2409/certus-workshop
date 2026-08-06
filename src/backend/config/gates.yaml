@@ -1,0 +1,309 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Cấu hình dây chuyền 5 gate + stop gate.
+#
+# KHUÔN BA VẾ, bắt buộc trên mọi khối (architecture.md:246-249):
+#   (i)   MỘT CHỖ Ở DUY NHẤT  — không hằng số ngưỡng nào nằm trong code
+#   (ii)  SUY RA TỪ ĐÂU        — nguồn của con số
+#   (iii) ĐIỀU KIỆN XEM LẠI    — khi nào phải nhìn lại nó
+#
+# Vế (iii) là vế thường thiếu, và thiếu nó thì "một con số sẽ hoá thành hằng số
+# vĩnh viễn". Mọi khối dưới đây đều có đủ ba vế.
+#
+# Đọc bằng `registry.require_key()`. Thiếu một khoá ⇒ ConfigError nêu ĐÍCH DANH
+# tên khoá và dừng. Trong `app/gates/` KHÔNG có một lời gọi `.get(key, default)`
+# nào — âm thầm rơi về default là cách một cái cổng biến thành cái ống.
+#
+# KHÔNG có `blocking_w` / `hot_w` ở tệp này. Chỗ ở duy nhất của chúng là
+# `config/zones.yaml`. Khai lại ở đây là tạo chỗ ở thứ hai cho cùng một ngưỡng,
+# và hai chỗ ở là cách kinh điển để hai nửa hệ thống trôi khỏi nhau mà không ai
+# thấy. `StopGateInput.blocking_w` vì thế là tham số bắt buộc do caller truyền
+# vào sau khi đọc `zones.yaml`.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ═══════════════════════════ GATE 1 — requirements ═══════════════════════════
+# Câu hỏi gate này hỏi: tiêu chí nghiệm thu có KIỂM ĐƯỢC BẰNG MÁY không.
+requirements:
+  # (i)   Chỗ ở duy nhất của tập kiểu nghiệm thu hợp lệ.
+  # (ii)  Suy ra từ: note 03 §1.3, bảng tiêu chí FAIL của gate `requirements`
+  #       ("verification_type ∈ {test, rule, manual}").
+  # (iii) Xem lại khi: xuất hiện một cách nghiệm thu thứ tư có oracle bằng máy.
+  #       CẤM thêm một kiểu chỉ vì kế hoạch nào đó không xếp vừa ba kiểu này —
+  #       một kiểu không có oracle thì nó là lời khuyên, không phải nghiệm thu.
+  verification_types: [test, rule, manual]
+
+  # (i)   Chỗ ở duy nhất của khuôn một luật trong nhánh `rule`.
+  # (ii)  Suy ra từ: note 03 §1.3 — "nhánh rule phải có rules[] với
+  #       scope/match/assert/severity".
+  # (iii) Xem lại khi: khuôn luật của `execution` đổi — hai chỗ này mô tả cùng
+  #       một khái niệm "một luật tất định", chúng phải cùng đổi hoặc cùng đứng.
+  rule_required_fields: [scope, match, assert, severity]
+
+  # (i)   Chỗ ở duy nhất của số vi phạm tối đa còn cho qua.
+  # (ii)  Suy ra từ: gate `requirements` chấm TÍNH KIỂM ĐƯỢC, không chấm chất
+  #       lượng — một tiêu chí không kiểm được bằng máy làm hỏng toàn bộ mắt
+  #       xích phía sau, nên không có ngưỡng nào ngoài 0 là có nghĩa.
+  # (iii) Xem lại khi: có người muốn nâng lên > 0. Nâng ⇒ phải kèm `reason:` và
+  #       phải trả lời được "mắt xích nào phía sau vẫn còn kiểm được".
+  max_violations: 0
+
+  # (i)   Chỗ ở duy nhất của DẤU SO SÁNH. Không để ngầm trong code.
+  # (ii)  Suy ra từ: note 03 §1.4 điều 1 — ca BIÊN (số đo bằng đúng ngưỡng) cho
+  #       kết quả do khoá này quyết định. Anti-pattern E4 là "thiếu ca biên, dấu
+  #       so sánh để ngầm".
+  # (iii) Xem lại khi: đổi `max_violations`. Đổi dấu mà quên đổi ngưỡng (hoặc
+  #       ngược lại) làm đảo hành vi đúng ở ca biên — test biên bắt được.
+  compare_op: "<="
+
+# ═══════════════════════════ GATE 2 — design ═════════════════════════════════
+# Câu hỏi gate này hỏi: ma trận phủ chiều chất lượng có lỗ nào KHÔNG AI KHAI.
+design:
+  # (i)   Chỗ ở duy nhất của sàn phủ theo băng rủi ro.
+  # (ii)  Suy ra từ: `harness/data/iso-25010-matrix.yaml:1-35` — risk_floors
+  #       critical:8 high:6 medium:4 low:2, đếm theo ĐẶC TÍNH của ISO 25010.
+  # (iii) Xem lại khi: (1) danh mục đặc tính đổi số hàng — sàn 8 vô nghĩa nếu
+  #       danh mục chỉ còn 6 hàng; (2) có người định NÂNG sàn để vá một lỗ.
+  #       Đã đo: nâng HIGH từ 6/8 lên 8/8 KHÔNG hẹp lỗ đi một milimet nào, vì
+  #       sàn đếm đặc tính còn lỗi rơi ở sub-property. Vặn một nút không nằm
+  #       trên đường của lỗi thì vặn hết cỡ cũng vô ích.
+  #       Ghi đè sàn bắt buộc kèm `reason:` khác rỗng — sàn là CHÍNH SÁCH,
+  #       không phải sự thật.
+  risk_floors:
+    critical: 8
+    high: 6
+    medium: 4
+    low: 2
+
+  # (i)   Chỗ ở duy nhất của chính sách "ô không có quyết định".
+  # (ii)  Suy ra từ: `iso-25010-matrix.yaml:1` — "a cell with no
+  #       covered/N-A-reason/gap decision is a defect, not 'covered'".
+  # (iii) Xem lại khi: có danh mục mới nhập vào. Chính sách này là LUẬT CỦA NHÀ,
+  #       không phải yêu cầu của chuẩn ngoài — xem `na_policy_source_kind`.
+  silent_na: reject          # reject | allow
+
+  # (i)   Chỗ ở duy nhất của chính sách N/A.
+  # (ii)  Suy ra từ: DD-4 — HAI CHUẨN QUỐC TẾ NÓI NGƯỢC NHAU. OWASP ASVS bắt
+  #       buộc khai lý do ("must clearly indicate in any report a reason for
+  #       non-applicability"); WCAG 2.2 cho phép im lặng ("if there is no
+  #       content to which a success criterion applies, the success criterion is
+  #       satisfied"); ISO/IEC 25010 không có khái niệm này (là taxonomy, không
+  #       phải quy trình chứng nhận).
+  # (iii) Xem lại khi: thêm một danh mục nguồn ngoài. Chính sách phải khai THEO
+  #       TỪNG DANH MỤC, không phải một hằng số toàn hệ — áp `require_reason`
+  #       lên WCAG là khai luật của nhà như thể là yêu cầu của chuẩn ngoài.
+  na_policy: require_reason  # require_reason | allow_silent
+  na_policy_source_kind: house   # external | house — CHÍNH SÁCH NÀY LÀ CỦA NHÀ
+
+  # (i)   Chỗ ở duy nhất của tiền tố câu N/A hợp lệ.
+  # (ii)  Suy ra từ: note 03 §1.3(c) — mỗi đường bắt buộc phải có một dòng test
+  #       HOẶC một câu "N/A because {{reason}}".
+  # (iii) Xem lại khi: đổi ngôn ngữ hiển thị của ma trận. Tiền tố là ĐỊNH DANH
+  #       (tiếng Anh), không phải chuỗi hiển thị.
+  na_reason_prefix: "N/A because "
+
+  # (i)   Chỗ ở duy nhất của danh sách đường bắt buộc.
+  # (ii)  Suy ra từ: note 03 §1.3 "10 đường bắt buộc" + §F3 — danh sách 10 đường
+  #       của hệ tham chiếu KHÔNG CÓ đường a11y, và đó chính là hạt mà cả 8 lớp
+  #       bảo vệ cùng mù. `accessibility` ở đó chỉ là một sub_property, "nó
+  #       không bao giờ có hàng riêng để mà bỏ trống". Danh sách dưới đây có
+  #       hàng đó.
+  # (iii) Xem lại khi: một sự cố thật rơi ngoài cả 10 đường. Danh sách cố định
+  #       LUÔN mù với thứ ngoài danh sách, nên phải có nhịp riêng chất vấn chính
+  #       danh sách — không đợi tới lúc có sự cố mới nhớ ra.
+  #       Dự án đích chỉ được THÊM đường, CẤM BỚT: ai muốn né một chiều chỉ cần
+  #       xoá hàng đó khỏi tờ, và mọi phép kiểm sẽ báo xanh.
+  required_paths:
+    - happy_path
+    - boundary_values
+    - error_handling
+    - concurrency_and_ordering
+    - authn_authz
+    - input_validation
+    - data_migration
+    - performance_degradation
+    - observability_regression
+    - accessibility
+
+  # (i)   Chỗ ở duy nhất của dấu so sánh sàn phủ.
+  # (ii)  Suy ra từ: sàn là "ít nhất bằng này đặc tính", nên ca BIÊN
+  #       (covered == floor) phải ĐẠT.
+  # (iii) Xem lại khi: đổi ngữ nghĩa sàn từ "ít nhất" sang "hơn hẳn".
+  compare_op: ">="
+
+# ═══════════════════════════ GATE 2a — grid ══════════════════════════════════
+# Câu hỏi gate này hỏi: zone nào trong tập chặn còn ô tệ dưới chuẩn.
+grid:
+  # (i)   Chỗ ở duy nhất của điểm band tối thiểu mà một zone chặn phải đạt.
+  # (ii)  Suy ra từ: bảng band_score của note 02 §3.2
+  #       (high 1.0 · med 0.6 · low 0.2 · stub 0.0 · unknown 0.0; N/A KHÔNG có
+  #       entry, bị loại hoàn toàn, không bao giờ chấm 0). Giá trị 1.0 nghĩa là:
+  #       trong zone chặn, ô TỆ NHẤT vẫn phải là `high`.
+  # (iii) Xem lại khi: bảng band_score đổi, hoặc khi có ≥1 lượt chạy mà mọi zone
+  #       chặn đều đạt ngay lượt đầu — một cổng chưa từng hạ xuống thì chưa
+  #       chứng minh được nó là cổng.
+  min_band_score: 1.0
+
+  # (i)   Chỗ ở duy nhất của danh sách band được phép BỎ QUA gate grid.
+  # (ii)  Suy ra từ: `gatesRegistry.ts:29-83` — "True when the gate
+  #       intentionally skipped (e.g. grid on LOW band)". Đây là dạng abstain
+  #       hợp lệ (b) của note 03 §4.3, KHÁC hoàn toàn với fail-open.
+  # (iii) Xem lại khi: có người muốn thêm `medium` vào đây. Mỗi band thêm vào
+  #       danh sách này là một vùng gate tự nguyện không nhìn — phải kèm
+  #       `reason:` và phải nói rõ ai nhìn thay.
+  skip_on_bands: [low]
+
+  # (i)   Chỗ ở duy nhất của dấu so sánh band score.
+  # (ii)  Suy ra từ: "đạt chuẩn" nghĩa là không thấp hơn chuẩn ⇒ ca biên ĐẠT.
+  # (iii) Xem lại khi: đổi `min_band_score` sang một giá trị không trùng với
+  #       bất kỳ band_score nào — lúc đó ca biên không tồn tại được nữa và test
+  #       biên mất ý nghĩa.
+  compare_op: ">="
+
+# ═══════════════════════════ GATE 3 — execution ══════════════════════════════
+# Câu hỏi gate này hỏi: PR diff có vi phạm luật tất định nào, và có khớp ma trận
+# đã duyệt HÀNG-ĐỐI-HÀNG không.
+execution:
+  # (i)   Chỗ ở duy nhất của tập severity ĐƯỢC PHÉP CHẶN.
+  # (ii)  Suy ra từ: anti-pattern C3 — hai luật a11y của hệ tham chiếu mang
+  #       `severity: info` + `detector: null`, và tài liệu chốt: "chúng là lời
+  #       khuyên, không phải cổng". Tập này tồn tại để câu hỏi "luật nào thật sự
+  #       chặn" có một câu trả lời đọc được, thay vì phải suy từ 145 dòng.
+  # (iii) Xem lại khi: thêm một severity mới vào `Finding.severity`. Nếu không
+  #       luật nào mang severity trong danh sách này ⇒ EmptyBlockingSetError,
+  #       vì một bộ luật không chặn được gì là lỗi cấu hình, không phải kết quả
+  #       tốt.
+  blocking_severities: [error]
+
+  # (i)   Chỗ ở duy nhất của số vi phạm chặn tối đa còn cho qua.
+  # (ii)  Suy ra từ: mọi luật trong danh sách dưới đây đều mang severity chặn,
+  #       nên một vi phạm là đủ để hoá đỏ.
+  # (iii) Xem lại khi: có luật `warn` được thêm vào — lúc đó ngưỡng này chỉ áp
+  #       cho tập con `blocking_severities`, và câu đó phải được viết lại ở đây.
+  max_violations: 0
+
+  # (i)   Chỗ ở duy nhất của dấu so sánh số vi phạm.
+  # (ii)  Suy ra từ: "không quá bấy nhiêu vi phạm" ⇒ ca biên ĐẠT.
+  # (iii) Xem lại khi: đổi `max_violations`.
+  compare_op: "<="
+
+  # (i)   Chỗ ở duy nhất của bộ luật tất định quét trên PR diff.
+  # (ii)  Suy ra từ: anti-pattern C2 — 143/145 luật của hệ tham chiếu mang
+  #       `detector: null`: "luật tồn tại, máy dò thì không". Ở đây `pattern`
+  #       LÀ máy dò, và nó là trường BẮT BUỘC: pattern rỗng ⇒ ConfigError, chứ
+  #       không hạ cấp thành advisory.
+  # (iii) Xem lại khi: (1) một sự cố thật lọt qua cả bộ luật này — luật chỉ bắt
+  #       được thứ nó biết tên; (2) bộ quét được nâng từ regex lên AST. Đã đo:
+  #       "khảo sát bằng regex trên mã luôn trả tập NHỎ HƠN thật; dùng AST".
+  #       Vì đang là regex, gate này mang evidence_tier `derived`, không phải
+  #       `executed`, và nó THIẾU chứ không THỪA.
+  rules:
+    - id: EXE-EVAL
+      severity: error
+      pattern: "\\beval\\s*\\("
+      message: "gọi eval() trên dữ liệu chạy qua biên tin cậy"
+    - id: EXE-SHELL-TRUE
+      severity: error
+      pattern: "shell\\s*=\\s*True"
+      message: "subprocess với shell=True — bề mặt code execution"
+    - id: EXE-BARE-EXCEPT
+      severity: error
+      pattern: "except\\s*:\\s*(#.*)?$"
+      message: "except trần nuốt lỗi — vi phạm luật fail-closed"
+    - id: EXE-SILENT-PASS
+      severity: error
+      pattern: "except[^\\n]*:\\s*pass\\b"
+      message: "except ... : pass — lỗi bị nuốt trong im lặng"
+    - id: EXE-DEFAULT-THRESHOLD
+      severity: error
+      pattern: "\\.get\\(\\s*[\"'](?:blocking_w|hot_w|risk_floors|false_high_block|min_band_score)[\"']\\s*,"
+      message: "đọc ngưỡng kèm giá trị mặc định — ngưỡng phải fail-closed"
+
+# ═══════════════════════════ GATE 5 — outcome ════════════════════════════════
+# Câu hỏi gate này hỏi: sau khi ship, thực tế có nói ngược lại phán quyết không.
+outcome:
+  # (i)   Chỗ ở duy nhất của ba cửa sổ quan sát.
+  # (ii)  Suy ra từ: note 03 §1.2 — "outcome-qasuite.ts | Cron 24h/7d/30d".
+  # (iii) Xem lại khi: nhịp release đổi. Cửa sổ 24h vô nghĩa với hệ release
+  #       hằng tháng, và cửa sổ 30d vô nghĩa với hệ release mỗi giờ.
+  windows: ["24h", "7d", "30d"]
+
+  # (i)   Chỗ ở duy nhất của cỡ mẫu tối thiểu từng cửa sổ.
+  # (ii)  Suy ra từ: bảng min_n của note 01 §4.4, đọc qua nối 3 của note 04 —
+  #       "muốn gate ở T=0.90 thì golden set phải có ≥35 case; T=0.95 → ≥73".
+  #       Với `max_incident_rate = 0.10` (tức T=0.90), 35 là cỡ mẫu nhỏ nhất mà
+  #       biên dưới Wilson còn có cơ hội nằm đúng phía ngưỡng.
+  # (iii) Xem lại khi: đổi `max_incident_rate`. Đổi ngưỡng mà không đổi min_n
+  #       tạo ra một gate KHÔNG BAO GIỜ PASS ĐƯỢC VỀ MẶT TOÁN HỌC — đặt
+  #       threshold 0.95 trên 20 case là đúng ca đó.
+  min_n:
+    "24h": 35
+    "7d": 35
+    "30d": 73
+
+  # (i)   Chỗ ở duy nhất của trần tỉ lệ sự cố sau ship.
+  # (ii)  Suy ra từ: đây là NGƯỠNG MINH HOẠ, chưa qua kiểm độ nhạy (luật L9:
+  #       "kết luận tựa lên một con số tự chọn ⇒ con số tự chọn phải kiểm độ
+  #       nhạy HOẶC khai thẳng là minh hoạ"). Dòng này là lời khai đó.
+  # (iii) Xem lại khi: có ≥1 quý dữ liệu thật. Lúc đó thay số minh hoạ bằng số
+  #       đo, và xoá câu "minh hoạ" ở vế (ii).
+  max_incident_rate: 0.10
+
+  # (i)   Chỗ ở duy nhất của độ tin cậy dùng cho biên dưới Wilson.
+  # (ii)  Suy ra từ: `Interval.conf` mặc định 0.95 trong contracts/types.py.
+  # (iii) Xem lại khi: `contracts.Interval.conf` đổi — hai chỗ này phải khớp,
+  #       nếu không thì con số trên UI và con số cái gate dùng là hai con số
+  #       khác nhau mang cùng một tên.
+  conf: 0.95
+
+  # (i)   Chỗ ở duy nhất của dấu so sánh tỉ lệ sự cố.
+  # (ii)  Suy ra từ: gate so BIÊN DƯỚI WILSON với trần, không bao giờ so k/n.
+  #       "không quá trần" ⇒ ca biên ĐẠT.
+  # (iii) Xem lại khi: đổi `max_incident_rate`.
+  compare_op: "<="
+
+# ═══════════════════════════ STOP GATE — 9 điều kiện ═════════════════════════
+stop_gate:
+  # (i)   Chỗ ở duy nhất của trần tỉ lệ CHẤM-CAO-SAI.
+  # (ii)  Suy ra từ: bản ghi thật `{"killed": 0, "survived": 2, "rate": 1.0}` và
+  #       thông điệp chặn "measured false-high rate 1.0 exceeds
+  #       stop-gate.false_high_block=0.15". ĐỌC KỸ: rate=1.0 là con số TỆ NHẤT
+  #       có thể, KHÔNG phải "100% bắt được".
+  # (iii) Xem lại khi: cỡ mẫu calibration vượt ngưỡng min_n. DEBTS của chính hệ
+  #       gốc tự ghi: "Đo trên cỡ mẫu 2 thì chưa nói được gì" — vì thế con số
+  #       này CHỈ có nghĩa khi đi cùng biên dưới Wilson, không bao giờ đi cùng
+  #       point estimate.
+  false_high_block: 0.15
+
+  # (i)   Chỗ ở duy nhất của cỡ mẫu calibration tối thiểu.
+  # (ii)  Suy ra từ: bảng min_n của note 01 §4.4 đọc qua nối 3 của note 04 —
+  #       "muốn gate ở T=0.90 thì golden set phải có ≥35 case". Khoá này đóng
+  #       đúng cái lỗ mà cả ba tài liệu gốc để hở: bản ghi {killed: 2,
+  #       survived: 0} cho point estimate 0.00 và ĐI LỌT, trong khi Wilson95 của
+  #       0/2 là [0.0000, 0.6576] — tỉ lệ chấm-cao-sai có thể tới 65,8%, hơn bốn
+  #       lần trần 0.15. Ở cỡ mẫu 2, KHÔNG kết luận nào được phép rút ra, nên
+  #       lượt chạy đó là UNVERIFIED và UNVERIFIED thì chặn.
+  # (iii) Xem lại khi: đổi `false_high_block`. Ngưỡng chặt hơn đòi cỡ mẫu lớn
+  #       hơn; đổi một cái mà quên cái kia tạo ra một cổng không bao giờ kết
+  #       luận được, hoặc tệ hơn, một cổng kết luận trên cỡ mẫu 2.
+  false_high_min_n: 35
+
+  # (i)   Chỗ ở duy nhất của độ tin cậy cho biên dưới Wilson của false_high.
+  # (ii)  Suy ra từ: `Interval.conf` mặc định 0.95.
+  # (iii) Xem lại khi: `outcome.conf` đổi — hai gate phải dùng cùng một mức, nếu
+  #       không thì "chắc 95%" ở chỗ này và ở chỗ kia là hai câu khác nhau.
+  conf: 0.95
+
+  # (i)   Chỗ ở duy nhất của dấu so sánh false_high.
+  # (ii)  Suy ra từ: chặn khi biên dưới VƯỢT trần ⇒ điều kiện KHÔNG chặn là
+  #       `lower <= false_high_block` ⇒ ca biên (lower đúng bằng trần) KHÔNG
+  #       chặn.
+  # (iii) Xem lại khi: đổi `false_high_block`.
+  compare_op: "<="
+
+  # (i)   Chỗ ở duy nhất của sàn mutation-catch cho bất biến CẤM TUYỆT ĐỐI
+  #       (Class B, điều kiện (h)).
+  # (ii)  Suy ra từ: note 02 §7(h) — "mutation-catch của bất biến cấm-tuyệt-đối
+  #       < 1.0" là điều kiện chặn. Bất biến cấm tuyệt đối không có mức "gần
+  #       đủ": bắt 47/48 nghĩa là có đúng một đường đi qua được.
+  # (iii) Xem lại khi: có người muốn hạ xuống dưới 1.0. Hạ ⇒ nó không còn là
+  #       bất biến cấm tuyệt đối nữa, và phải đổi tên chứ không đổi số.
+  class_b_mutation_catch_floor: 1.0

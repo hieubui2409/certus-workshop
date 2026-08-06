@@ -1,0 +1,43 @@
+# Cấu hình xác thực.
+#
+# (i)   Đây là CHỖ Ở DUY NHẤT của các giá trị dưới đây. Khoá ký KHÔNG nằm ở đây
+#       — nó thuộc về môi trường (CERTUS_JWT_SECRET), vì một khoá ký nằm trong
+#       tệp cấu hình được commit là một khoá đã lộ.
+# (ii)  Suy ra từ: system-design.md §7 (bảng scope) + §2 (ràng buộc: PyJWT
+#       HS256 vì cài `cryptography` đã đo được là timeout khi build từ nguồn).
+# (iii) Xem lại khi: thêm vai mới, hoặc khi CERTUS chạy nhiều tiến trình trên
+#       nhiều máy — lúc đó HS256 hết đủ và phải chuyển sang khoá bất đối xứng.
+
+# Bên phát token. Đi vào claim `iss` và được kiểm khi giải mã.
+# (ii)  Suy ra từ: tên dịch vụ. Kiểm `iss` để token của một bản build khác
+#       (ví dụ bản đã sửa lời giải) không dùng chéo sang bản này.
+# (iii) Xem lại khi: tách CERTUS thành nhiều dịch vụ.
+issuer: "certus-backend"
+
+# Đối tượng nhận token. Đi vào claim `aud`.
+# (ii)  Suy ra từ: chỉ có một client là React UI.
+# (iii) Xem lại khi: có client thứ hai (CLI, CI bot) cần quyền khác.
+audience: "certus-ui"
+
+# Hạn của token, tính bằng giây.
+# (ii)  Suy ra từ: buổi workshop dài 4 giờ; 8 giờ để không ai bị đá ra giữa
+#       buổi kể cả khi bắt đầu muộn. Là MINH HOẠ, chưa qua kiểm độ nhạy.
+# (iii) Xem lại khi: đổi thời lượng buổi học, hoặc khi CERTUS chạy ngoài lớp.
+token_ttl_seconds: 28800
+
+# Dung sai lệch đồng hồ khi kiểm `exp`/`iat`, tính bằng giây.
+# (ii)  Suy ra từ: máy sinh viên không đồng bộ NTP; 60 giây đủ che lệch thường
+#       gặp mà không kéo dài hạn token một cách đáng kể.
+# (iii) Xem lại khi: có báo cáo token hết hạn sớm/muộn bất thường.
+clock_skew_seconds: 60
+
+# Tài khoản demo của workshop: {username: role}.
+# (ii)  Suy ra từ: cần đúng ba vai để diễn được kịch bản phân quyền trên sân
+#       khấu. KHÔNG có mật khẩu — đây không phải cơ chế xác thực người dùng
+#       thật, chỉ là chỗ để lấy nhanh một token đúng vai.
+# (iii) Xem lại khi: CERTUS được dùng ngoài workshop — lúc đó khối này phải bị
+#       gỡ bỏ hoàn toàn, không phải đổi giá trị.
+demo_accounts:
+  demo-viewer: viewer
+  demo-analyst: analyst
+  demo-admin: admin

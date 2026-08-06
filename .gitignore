@@ -1,0 +1,49 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node / React ---
+node_modules/
+dist/
+.vite/
+*.local
+
+# --- Secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Runtime state ---
+*.sqlite3
+*.db
+logs/
+*.log
+
+# --- Uploads: workspace do người dùng tải lên khi chạy thử ---
+# Repo mẫu đi kèm nằm ở fixtures/ nên vẫn được commit.
+var/
+uploads/
+.workspaces/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+# >>> harness (generated runtime — never commit) >>>
+harness/state/
+harness/standards/.snapshots/
+harness/e2e/RUN-LOG.md
+.harness/
+.claude/settings.json
+.claude/settings.local.json
+.claude/agent-memory/
+.harness-dev/hs-plugins/
+# <<< harness <<<

@@ -1,0 +1,31 @@
+{
+  "target": "shopcart",
+  "zone_id": "payment_critical",
+  "module": "shopcart/payment.py",
+  "functions": [
+    "is_supported",
+    "payment_fee"
+  ],
+  "verdict": "killed",
+  "round_had_survived": false,
+  "seed_id": "mut-shopcart-702276eafe13",
+  "probe_sha256": "042c3f9b6c58144fc09cdd920dd3ea3efdddeb4357402e3c0590f3932da3099e",
+  "operator": "if method is PaymentMethod.COD: → if method is not PaymentMethod.COD:",
+  "target_path": "shopcart/payment.py",
+  "anchor_mutant": "shopcart.payment.x_is_supported__mutmut_1",
+  "recorded_at": "2026-08-06T07:19:28.154531+00:00",
+  "evidence": {
+    "scoped_killed": 10,
+    "scoped_survived": 0,
+    "scoped_bound": 10,
+    "module_killed": 17,
+    "module_survived": 1,
+    "out_of_scope_survivors": [
+      {
+        "function": "validate_payment",
+        "line": 35,
+        "mutant": "shopcart.payment.x_validate_payment__mutmut_7"
+      }
+    ]
+  }
+}

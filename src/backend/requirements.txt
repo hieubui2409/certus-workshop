@@ -1,0 +1,54 @@
+# CERTUS backend.
+#
+# Nguyên tắc: ƯU TIÊN DÙNG THƯ VIỆN. Không tự viết lại thứ đã có bản chín.
+# Code tự viết chỉ dành cho phần KHÔNG có thư viện: bảng band projection,
+# zone predicate, và luật ghép ba tầng mẫu số lại với nhau.
+
+# --- web ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.0
+sse-starlette==2.2.1
+python-multipart==0.0.20
+
+# --- LLM ---
+anthropic==0.42.0
+
+# --- thống kê: KHÔNG tự viết Wilson ---
+# scipy  : binomtest().proportion_ci(method="wilson"|"exact")
+# statsmodels: proportion_confint(method="wilson"|"jeffreys"|"agresti_coull"),
+#              proportion_effectsize, và test McNemar sẵn có
+scipy==1.15.0
+statsmodels==0.14.4
+numpy==2.2.1
+
+# --- đo phủ & đột biến: KHÔNG tự viết AST mutation ---
+# DEBTS.md của tài liệu nền tự ghi rằng quyết định "tự viết mutation thay vì
+# dùng mutmut/cosmic-ray" chưa hề được đo và đang đỡ 932 dòng code. Ta dùng lib.
+coverage==7.6.10
+mutmut==3.2.0
+
+# --- sinh tổ hợp t-wise: KHÔNG tự viết pairwise ---
+allpairspy==2.5.1
+
+# --- observability ---
+loguru==0.7.3
+langfuse==2.57.0
+opentelemetry-sdk==1.29.0
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-exporter-otlp-proto-http==1.29.0
+
+# --- sandbox ---
+# Chế độ "docker" cô lập thật. Chế độ "subprocess" chạy được mọi nơi nhưng chỉ
+# tamper-evident — CERTUS chạy code lạ tải lên nên giới hạn đó phải nói thẳng.
+docker==7.1.0
+
+# --- auth ---
+# PyJWT + HS256: thuần Python, không cần toolchain C. Đã đo ở lần dựng trước:
+# cài `cryptography` (dependency của python-jose) timeout khi build từ source.
+# Đánh đổi: HS256 đối xứng — đủ cho workshop, không phải mẫu cho production.
+PyJWT==2.10.1
+
+# --- hạ tầng ---
+PyYAML==6.0.2

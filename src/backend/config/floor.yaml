@@ -1,0 +1,41 @@
+# Sàn điểm band tối thiểu cho từng zone — thứ gate grid đọc để nói pass/fail.
+#
+# (i)   CHỖ Ở DUY NHẤT của mọi sàn. rollup.evaluate_floor() không có default
+#       nào trong code: thiếu `default_min_score` ⇒ ConfigError('default_min_score').
+# (ii)  SUY RA TỪ: research note 02 §3.2 (min_per_zone LÀ cái gate) + thang điểm
+#       band ở grid.yaml. 0.6 = điểm của `med`, tức "sàn mặc định là mọi ô phải
+#       ít nhất được med". 1.0 cho zone tiền thật = "chỉ `high` mới qua".
+#       Đây là con số CHÍNH SÁCH, không phải con số đo được — nói rõ vì một sàn
+#       trông như kết quả đo là một sàn không ai dám sửa.
+# (iii) XEM LẠI KHI: một zone phải xin miễn trừ lần thứ hai (dấu hiệu sàn sai,
+#       không phải dấu hiệu zone tệ); hoặc khi band_scores trong grid.yaml đổi —
+#       sàn ở đây so trực tiếp với thang điểm đó nên hai tệp trôi khỏi nhau được.
+#
+# QUYỀN GHI: đây là tệp DUY NHẤT trong ba tệp config của grid được sửa CẢ HAI
+# CHIỀU bởi role `analyst` (system-design §7 / SDD 00 §4.1) — và chính vì thế
+# mỗi mục BẮT BUỘC kèm `reason` khác rỗng. Thiếu reason ⇒ ConfigError, giữ
+# nguyên luật cũ. Một lần nới sàn không giải thích được là một lần tự chấm mình.
+
+default_min_score: 0.6
+
+zones:
+  payment_critical:
+    min_score: 1.0
+    reason: >-
+      Đường tiền thật. Ở đây `med` nghĩa là "có đúng một assert" — một ô như thế
+      không phân biệt được với một probe tautology, nên chỉ `high` (đã có mutant
+      bị giết, neo seed, bound đủ trường) mới được coi là đã phủ.
+
+  concurrency:
+    min_score: 0.6
+    reason: >-
+      Lỗi thứ tự thi hành không nằm trong dòng mã nào nên mutation không cấy vào
+      được; đòi `high` ở đây là đòi một bằng chứng mà cỗ máy hiện chưa sinh ra
+      được, và một sàn không bao giờ đạt nổi thì sớm muộn cũng bị tắt.
+
+  catch_all:
+    min_score: 0.2
+    reason: >-
+      Zone rẻ tiền tồn tại để không ô nào rơi khỏi bảng. Đòi cao ở đây là đẩy
+      mọi ô lạ vào trạng thái chặn, và cái chặn nào cũng đỏ thì không ai đọc nữa.
+      w thấp ĐƯỢC PHÉP unknown khi đã KHAI — im lặng mới là vi phạm.
