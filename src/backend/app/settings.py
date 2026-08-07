@@ -90,6 +90,12 @@ class Settings(BaseSettings):
     otlp_endpoint: str | None = None
     log_level: str = "INFO"
 
+    # --- công cụ giảng dạy nội bộ ---
+    # Bật các công cụ chỉ dùng ở máy trình bày (trang /learning + endpoint
+    # /api/learning/*). MẶC ĐỊNH TẮT; bản phát cho lớp học không kèm các công cụ
+    # này. Chỉ bật khi cần: `CERTUS_INSTRUCTOR_MODE=1`.
+    instructor_mode: bool = False
+
     # --- retrieval ---
     context_max_chars: int = 1200
 

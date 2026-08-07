@@ -47,6 +47,7 @@ import {
   IconUpload,
 } from '@tabler/icons-react';
 
+import { ModeSwitch } from '@/components/ModeSwitch';
 import { UploadPanel } from '@/components/UploadPanel';
 import { AxisSelectionPanel } from '@/components/AxisSelectionPanel';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -156,12 +157,14 @@ export default function App() {
             </Text>
           </Group>
           <Group gap="xs">
-            {USE_MOCK && (
-              <Tooltip label="VITE_USE_MOCK=1 — stream đang được phát lại từ api/mock.ts, không phải từ backend.">
+            {USE_MOCK ? (
+              <Tooltip label="VITE_USE_MOCK=1 — stream đang được phát lại từ api/mock.ts, không phải từ backend. Công tắc cassette/live không áp dụng ở chế độ này.">
                 <Badge color="orange" variant="light">
                   dữ liệu giả lập
                 </Badge>
               </Tooltip>
+            ) : (
+              <ModeSwitch />
             )}
             {store.done && (
               <Badge variant="light" ff="monospace">

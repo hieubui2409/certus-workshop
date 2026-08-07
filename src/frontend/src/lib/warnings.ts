@@ -133,9 +133,9 @@ export const WARNING_CATALOGUE: Record<string, WarningStyle> = {
   },
   'llm-output': {
     severity: 'warn',
-    title: 'Câu trả lời của mô hình không dùng được nguyên vẹn',
+    title: 'Phần diễn giải bằng lời của mô hình không trọn vẹn',
     explain:
-      'Bước diễn giải KHÔNG đọc được (hoặc bỏ) câu trả lời của mô hình: sai định dạng JSON, lệch nonce chống bơm, hoặc claim dị dạng bị validator từ chối. Đây KHÔNG phải chuyện chính sách dữ liệu — các con số đo lường phía trên vẫn do pipeline tính, chỉ phần diễn giải bằng lời của mô hình là thiếu.',
+      'Một phần — đôi khi toàn bộ — phần diễn giải bằng lời bị bỏ; đọc dòng lý do NGAY DƯỚI để biết chính xác cái gì: có thể vài claim bị validator của hệ từ chối, hoặc câu trả lời sai định dạng JSON / lệch nonce chống bơm nên không đọc được. Đây KHÔNG phải chuyện chính sách dữ liệu và KHÔNG đụng tới số đo — mọi con số phía trên vẫn do pipeline tính độc lập, chỉ phần chữ diễn giải là thiếu.',
   },
   'data-policy': {
     severity: 'warn',

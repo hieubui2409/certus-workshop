@@ -13,7 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import analyze, auth, axes, chat, config, health, ledger, samples, upload
+from app.api.routes import analyze, auth, axes, chat, config, health, ledger, mode, samples, upload
 from app.api.schemas import ErrorOut
 from app.contracts.errors import CertusError, PermissionDenied
 from app.observability import tracing
@@ -95,3 +95,4 @@ app.include_router(samples.router)
 app.include_router(upload.router)
 app.include_router(config.router)
 app.include_router(ledger.router)
+app.include_router(mode.router)
