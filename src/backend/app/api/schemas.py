@@ -32,15 +32,32 @@ class AnalyzeRequest(BaseModel):
     """Yêu cầu phân tích một repo.
 
     `target` trỏ tới một repo mẫu đi kèm; `upload_id` trỏ tới thứ người dùng
-    vừa tải lên. Đúng một trong hai, không cả hai — nhập nhèm nguồn đầu vào là
-    chỗ đầu tiên một biên tin cậy bị xoá nhoà.
+    vừa tải lên; `local_path` trỏ thẳng một thư mục có sẵn trên máy chạy
+    backend. Đúng MỘT trong ba, không hai — nhập nhèm nguồn đầu vào là chỗ đầu
+    tiên một biên tin cậy bị xoá nhoà.
     """
 
     target: str | None = None
     upload_id: str | None = None
+    #: Thư mục có sẵn trên máy chạy backend. Có mặt vì một repo thật không đi
+    #: qua zip được nguyên vẹn: `.venv` neo đường dẫn tuyệt đối nên nén theo là
+    #: vô dụng, còn nén trần thì mất môi trường. Trỏ thẳng thì repo giữ nguyên
+    #: mọi thứ nó cần. Chạy TẠI CHỖ, không sao chép — CERTUS chỉ ĐỌC và chạy bộ
+    #: kiểm của repo, y như người dùng tự chạy. Chỉ hợp lý vì backend chạy trên
+    #: máy của chính người dùng (localhost); một bản triển khai nhiều người
+    #: dùng phải khoá đường này lại.
+    local_path: str | None = None
     question: str = "Bộ kiểm thử của repo này phủ tới đâu?"
     user_id: str = "guest"
     project_id: str | None = None
+    #: Lệnh chạy bộ kiểm, do người dùng khai. None ⇒ CERTUS tự dò (uv/venv/host).
+    #: Có mặt vì không cách nào đoán đúng cho mọi repo: một repo có thể cần
+    #: `-p no:randomly`, một marker riêng, hay một wrapper của chính nó.
+    test_command: list[str] | None = None
+    #: Biến môi trường cho lượt chạy bộ kiểm (vd `VSF_DATABASE_URL`). Nhiều repo
+    #: có guard trong conftest đòi đúng biến trước khi cho chạy — không khai
+    #: được thì không đo được.
+    test_env: dict[str, str] | None = None
     #: HITL (tùy chọn): tập trục người dùng đã XÁC NHẬN sau khi xem đề xuất. Khi
     #: có, pipeline THU HẸP các trục KHÁM PHÁ ĐƯỢC xuống đúng tập này — key là tên
     #: trục cần giữ, value là danh sách giá trị cần giữ (rỗng ⇒ giữ mọi giá trị
@@ -93,6 +110,7 @@ class AxisDiscoveryResponse(BaseModel):
 
     target: str | None = None
     upload_id: str | None = None
+    local_path: str | None = None
     candidates: list[AxisCandidate]
     engine: Literal["tot", "floor", "hitl"]
     note: str | None = None

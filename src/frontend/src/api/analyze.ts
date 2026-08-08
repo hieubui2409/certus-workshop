@@ -54,7 +54,7 @@ export function getCoverage(runId: string, signal?: AbortSignal): Promise<Covera
  * cassette, không có bước chọn trục động).
  */
 export function getAxisDiscovery(
-  body: { target?: string; upload_id?: string },
+  body: { target?: string; upload_id?: string; local_path?: string },
   signal?: AbortSignal,
 ): Promise<AxisDiscoveryResponse | null> {
   return USE_MOCK ? Promise.resolve(null) : discoverAxes(body, signal);

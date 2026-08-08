@@ -126,4 +126,61 @@ def test_chat_stream_tool_flow(client: TestClient, auth, tmp_path, monkeypatch) 
     )
     assert res.status_code == 200
     kinds = [e for e, _ in _events(res.text)]
-    assert kinds == ["tool_use", "tool_result", "message", "done"]
+    # `message_delta` chen vào TRƯỚC phần còn lại (chữ chảy ngay khi mô hình
+    # viết); bộ khung tool_use→tool_result→message→done giữ nguyên thứ tự.
+    assert [k for k in kinds if k != "message_delta"] == [
+        "tool_use", "tool_result", "message", "done"
+    ]
+
+
+def test_chat_stream_phat_tung_manh_chu_khong_doi_het_cau(
+    client: TestClient, auth, tmp_path, monkeypatch
+) -> None:
+    """Chữ phải CHẢY, không dồn thành một cục lúc cuối.
+
+    Endpoint là SSE nhưng vòng tool-loop trước đây `await` cho xong cả lượt rồi
+    mới phát đúng một sự kiện `message`. Người dùng nhìn màn hình trống suốt thời
+    gian mô hình viết — đúng cái SSE sinh ra để tránh. `message_delta` là từng
+    mẩu chữ khi nó đến; `message` cuối vẫn còn, mang câu ĐẦY ĐỦ để phía nhận
+    không phải tự ghép (và để hợp đồng cũ không vỡ).
+    """
+    monkeypatch.setattr(settings, "cassette_dir", tmp_path)
+    monkeypatch.setattr(settings, "llm_mode", "mock")
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "chat.db"))
+    tools = REGISTRY.anthropic_schemas()
+    model = settings.model
+
+    parts = ["Độ phủ ", "hiện tại ", "là 94%."]
+    user = [{"role": "user", "content": "Phủ bao nhiêu?"}]
+    key = cassette_key(model=model, system=CHAT_SYSTEM, messages=user, tools=tools)
+    (tmp_path / cassette_slug(key, "chat")).write_text(
+        json.dumps(
+            {
+                "key": key, "model": model,
+                "request": {"system": CHAT_SYSTEM, "messages": user, "tools": tools},
+                "response": {
+                    "text": "".join(parts), "chunks": parts,
+                    "tool_uses": [], "stop_reason": "end_turn",
+                    "usage": {"input_tokens": 1, "output_tokens": 1},
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    res = client.post(
+        "/api/chat/stream", headers=auth,
+        json={"thread_id": "api-delta", "message": "Phủ bao nhiêu?"},
+    )
+    assert res.status_code == 200
+    evs = _events(res.text)
+    deltas = [d["payload"]["text"] for e, d in evs if e == "message_delta"]
+    assert deltas == parts, f"phải phát đúng từng mẩu, thấy {deltas}"
+
+    kinds = [e for e, _ in evs]
+    assert kinds[-2:] == ["message", "done"], kinds
+    final = next(d["payload"]["text"] for e, d in evs if e == "message")
+    assert final == "".join(parts), "sự kiện `message` cuối vẫn mang câu đầy đủ"
+    # Mọi delta phải đến TRƯỚC `message` — nếu không thì nó không phải stream.
+    assert kinds.index("message_delta") < kinds.index("message")

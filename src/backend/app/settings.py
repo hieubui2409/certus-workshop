@@ -107,6 +107,14 @@ class Settings(BaseSettings):
     sandbox_mode: Literal["subprocess", "docker"] = "subprocess"
     sandbox_image: str = "python:3.12-slim"
     probe_timeout_seconds: int = 60
+    #: Trần RIÊNG cho lượt chạy bộ kiểm của repo đích. Tách khỏi
+    #: `probe_timeout_seconds` vì hai thứ khác hẳn về bậc độ lớn: một probe là
+    #: một lệnh nhỏ kiểm chứng đúng một claim (60s là rộng rãi), còn bộ kiểm
+    #: của một repo thật chạy hàng nghìn test — đo được 151s trên
+    #: document-intake, và lượt ĐẦU còn cộng thêm thời gian uv tải Python +
+    #: dependency. Dùng chung một trần thì repo thật luôn bị cắt ngang ở giữa,
+    #: rồi báo "không đo được" cho một bộ kiểm hoàn toàn khoẻ mạnh.
+    suite_timeout_seconds: int = 1800
 
     def ensure_dirs(self) -> None:
         for p in (self.workspace_dir, self.log_dir, self.ledger_path.parent, self.db_path.parent):

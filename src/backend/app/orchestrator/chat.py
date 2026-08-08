@@ -13,6 +13,7 @@ cassette multiturn replay trúng. Xem system-architecture §7.2.
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 from collections.abc import AsyncIterator, Mapping, Sequence
 from datetime import datetime, timezone
@@ -21,7 +22,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.agent.llm import LLMClient
+from app.agent.llm import LLMClient, ToolLoopResult
 from app.agent.tools.registry import REGISTRY
 from app.settings import Settings, settings as default_settings
 
@@ -53,7 +54,7 @@ class ChatEvent(BaseModel):
     loại của analyze). `seq` tăng đơn điệu trong một lượt để frontend bắt sự kiện rơi."""
 
     seq: int
-    kind: Literal["message", "tool_use", "tool_result", "done", "error"]
+    kind: Literal["message", "message_delta", "tool_use", "tool_result", "done", "error"]
     thread_id: str
     payload: dict[str, Any] = Field(default_factory=dict)
 
@@ -128,10 +129,37 @@ class ChatSession:
         messages = [*history, {"role": "user", "content": user_message}]
         seq = 0
 
-        try:
-            result = await self.client.complete_with_tools(
-                system=CHAT_SYSTEM, messages=messages, registry=self.registry
+        # Tool-loop là một `await` (nhiều vòng gọi model), còn ta cần phát chữ NGAY
+        # khi nó về. Hàng đợi nối hai nhịp đó: loop chạy như một task, mỗi mẩu chữ
+        # đẩy vào queue, generator này rút ra và phát tiếp. Không có nó thì endpoint
+        # tuy là SSE nhưng người dùng vẫn nhìn màn hình trống tới lúc xong cả lượt.
+        queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+        async def _push(chunk: str) -> None:
+            await queue.put(chunk)
+
+        async def _drive() -> ToolLoopResult:
+            try:
+                return await self.client.complete_with_tools(
+                    system=CHAT_SYSTEM, messages=messages, registry=self.registry,
+                    on_chunk=_push,
+                )
+            finally:
+                await queue.put(None)  # sentinel: hết chữ, dù xong hay lỗi
+
+        task = asyncio.create_task(_drive())
+        while True:
+            chunk = await queue.get()
+            if chunk is None:
+                break
+            yield ChatEvent(
+                seq=seq, kind="message_delta", thread_id=self.thread_id,
+                payload={"text": chunk},
             )
+            seq += 1
+
+        try:
+            result = await task
         except Exception as exc:  # cassette-miss / tool-loop kiệt / tool lỗi → báo trung thực
             yield ChatEvent(
                 seq=seq, kind="error", thread_id=self.thread_id, payload={"detail": str(exc)}

@@ -24,9 +24,10 @@ import {
   Stack,
   Table,
   Text,
+  TextInput,
   Title,
 } from '@mantine/core';
-import { IconFileZip, IconUpload, IconX } from '@tabler/icons-react';
+import { IconFileZip, IconFolder, IconUpload, IconX } from '@tabler/icons-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { listSamples, pickSample, sendZip } from '@/api/analyze';
@@ -183,8 +184,87 @@ export function UploadPanel({ result, onResult }: Props) {
         />
       </Paper>
 
+      <FolderSource
+        active={result?.source === 'folder' ? (result.local_path ?? '') : ''}
+        disabled={busy}
+        onPick={(path) =>
+          onResult({
+            run_id: path,
+            source: 'folder',
+            label: path.split('/').filter(Boolean).slice(-1)[0] || path,
+            // Thư mục KHÔNG đi qua `/api/upload` nên không có danh sách tệp
+            // nhận/loại ở bước này — chính sách dữ liệu vẫn chạy, nhưng ở
+            // trong pipeline (bước 2) và hiện ra qua cảnh báo `data-policy`.
+            accepted: [],
+            rejected: [],
+            local_path: path,
+          })
+        }
+      />
+
       {result && <IngestResult result={result} />}
     </Stack>
+  );
+}
+
+/**
+ * Nguồn thứ ba: trỏ thẳng một thư mục có sẵn trên máy chạy backend.
+ *
+ * Có mặt vì một repo thật không đi qua zip được nguyên vẹn: `.venv` neo đường
+ * dẫn tuyệt đối nên nén theo là vô dụng, còn nén trần thì mất môi trường —
+ * `pytest` chết ở bước collect và mọi con số phủ phía sau là con số của hư
+ * không. Trỏ thẳng thì repo giữ nguyên mọi thứ nó cần.
+ *
+ * KHÔNG có hộp thoại chọn thư mục: trình duyệt không cho web đọc đường dẫn
+ * tuyệt đối của một thư mục (đúng như vậy — đó là một biên bảo mật). Người
+ * dùng dán đường dẫn, và đó là cách trung thực duy nhất.
+ */
+function FolderSource({
+  active,
+  disabled,
+  onPick,
+}: {
+  active: string;
+  disabled: boolean;
+  onPick: (path: string) => void;
+}) {
+  const [path, setPath] = useState(active);
+  const trimmed = path.trim();
+
+  return (
+    <Paper withBorder p="sm" radius="md">
+      <Group gap="xs" mb={6}>
+        <IconFolder size={18} />
+        <Text fw={600} size="sm">
+          …hoặc trỏ thẳng một thư mục trên máy này
+        </Text>
+      </Group>
+      <Text size="xs" c="dimmed" mb="xs">
+        Repo được chạy <b>tại chỗ</b>, không sao chép. Đây là cách duy nhất giữ được môi
+        trường của repo (venv, lockfile) — thứ mà nén .zip luôn làm mất.
+      </Text>
+      <Group gap="xs" align="flex-end" wrap="nowrap">
+        <TextInput
+          style={{ flex: 1 }}
+          size="xs"
+          label="Đường dẫn tuyệt đối"
+          placeholder="/home/ban/du-an/repo-cua-ban"
+          value={path}
+          disabled={disabled}
+          onChange={(e) => setPath(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && trimmed) onPick(trimmed);
+          }}
+        />
+        <Button size="xs" disabled={disabled || !trimmed} onClick={() => onPick(trimmed)}>
+          Dùng thư mục này
+        </Button>
+      </Group>
+      <Text size="xs" c="dimmed" mt={6}>
+        Đường dẫn tính trên <b>máy đang chạy backend</b>. Trình duyệt không được phép đọc
+        đường dẫn thật của thư mục bạn chọn, nên phải dán bằng tay.
+      </Text>
+    </Paper>
   );
 }
 
@@ -198,7 +278,12 @@ function IngestResult({ result }: { result: UploadResult }) {
           {result.run_id}
         </Badge>
         <Badge variant="light" color="gray">
-          nguồn: {result.source === 'sample' ? 'repo mẫu' : 'tệp .zip'}
+          nguồn:{' '}
+          {result.source === 'sample'
+            ? 'repo mẫu'
+            : result.source === 'folder'
+              ? 'thư mục trên máy'
+              : 'tệp .zip'}
         </Badge>
       </Group>
 

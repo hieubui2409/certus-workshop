@@ -21,11 +21,22 @@ import type { Cell, Claim, GateVerdict } from './contracts';
 export interface StepPayload {
   step: number;
   name: string;
-  status: 'running' | 'ok' | 'failed' | 'skipped';
+  /**
+   * `done` là giá trị backend THẬT SỰ phát (`_step` mặc định `status="done"`).
+   * `ok` đứng đây vì mock `api/mock.ts` phát `ok`, và cả hai đều nghĩa là bước
+   * đã xong. Bảng tiến trình phải nhận CẢ HAI, không thì một lượt chạy trên
+   * backend thật hiện xám toàn bộ trong khi mọi bước đã chạy xong.
+   */
+  status: 'running' | 'ok' | 'done' | 'failed' | 'skipped';
 }
 
 export interface LogPayload {
-  level: 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR';
+  /**
+   * `TEST` là output NGUYÊN VĂN của bộ kiểm repo đích, không phải mức log của
+   * CERTUS. Tách hẳn khỏi bốn mức kia vì nguồn khác nhau: bốn mức đầu là
+   * CERTUS nói về việc nó làm, `TEST` là chữ của repo người dùng.
+   */
+  level: 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'TEST';
   msg: string;
   trace_id?: string;
 }

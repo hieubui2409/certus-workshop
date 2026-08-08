@@ -13,7 +13,13 @@
 import { authHeaders } from './auth';
 import { API_BASE } from './client';
 
-export type ChatEventKind = 'message' | 'tool_use' | 'tool_result' | 'done' | 'error';
+export type ChatEventKind =
+  | 'message'
+  | 'message_delta'
+  | 'tool_use'
+  | 'tool_result'
+  | 'done'
+  | 'error';
 
 export interface ChatEvent {
   event: ChatEventKind;
@@ -24,6 +30,7 @@ export type ChatHandler = (ev: ChatEvent) => void;
 
 const CHAT_KINDS = new Set<ChatEventKind>([
   'message',
+  'message_delta',
   'tool_use',
   'tool_result',
   'done',

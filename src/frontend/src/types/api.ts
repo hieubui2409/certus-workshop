@@ -40,7 +40,7 @@ export interface RejectedFile {
 
 export interface UploadResult {
   run_id: string;
-  source: 'sample' | 'zip';
+  source: 'sample' | 'zip' | 'folder';
   label: string;
   accepted: FileEntry[];
   rejected: RejectedFile[];
@@ -53,6 +53,12 @@ export interface UploadResult {
    */
   target?: string;
   upload_id?: string;
+  /**
+   * Thư mục có sẵn trên máy chạy backend. Nguồn thứ ba vì một repo thật không
+   * đi qua zip được nguyên vẹn: `.venv` neo đường dẫn tuyệt đối nên nén theo
+   * là vô dụng, còn nén trần thì mất môi trường.
+   */
+  local_path?: string;
 }
 
 /**
@@ -106,7 +112,15 @@ export interface PromptPayload {
 export interface AnalyzeRequest {
   target?: string;
   upload_id?: string;
+  local_path?: string;
   question: string;
+  /**
+   * Lệnh chạy bộ kiểm của repo đích. Bỏ trống ⇒ backend tự dò (uv / venv sẵn
+   * có / môi trường CERTUS). Có mặt vì không cách nào đoán đúng cho mọi repo.
+   */
+  test_command?: string[];
+  /** Biến môi trường cho lượt chạy bộ kiểm — nhiều repo có guard đòi đúng biến. */
+  test_env?: Record<string, string>;
   /**
    * HITL: tập trục người dùng ĐÃ CHỐT sau khi xem đề xuất của engine ToT. Key là
    * tên trục cần giữ, value là danh sách giá trị (rỗng ⇒ giữ mọi giá trị). Bỏ
@@ -136,6 +150,7 @@ export interface AxisCandidate {
 export interface AxisDiscoveryResponse {
   target?: string | null;
   upload_id?: string | null;
+  local_path?: string | null;
   candidates: AxisCandidate[];
   engine: 'tot' | 'floor' | 'hitl';
   note?: string | null;

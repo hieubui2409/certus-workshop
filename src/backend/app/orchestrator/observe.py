@@ -45,8 +45,14 @@ def scan_tests(root: Path) -> list[TestFn]:
     biến chứa chữ assert sẽ làm con số phồng lên, và một mẫu số phồng lên là
     đúng thứ cả sản phẩm này tồn tại để chống.
     """
+    from app.core.grid.axis_admit import is_vendor_path
+
     out: list[TestFn] = []
     for py in sorted(root.rglob("test_*.py")):
+        # Test của thư viện trong `.venv` không phải bộ kiểm của repo đang chấm;
+        # đếm chúng làm mẫu số quan sát phồng lên bằng công sức của người khác.
+        if is_vendor_path(py, root):
+            continue
         try:
             tree = ast.parse(py.read_text(encoding="utf-8"))
         except (SyntaxError, UnicodeDecodeError):

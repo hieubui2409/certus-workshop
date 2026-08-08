@@ -16,10 +16,11 @@ Ba luật của luồng:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
 import time
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -28,7 +29,7 @@ from pydantic import ValidationError
 
 from app.agent.claims import ClaimParseError, extract_claims_json, parse_claims
 from app.agent.context import load_prompt, render_prompt
-from app.agent.llm import LLMClient
+from app.agent.llm import LLMClient, LLMResponse
 from app.agent.persona import PersonaStore
 from app.agent.retrieval import build_context
 from app.api.schemas import (
@@ -42,6 +43,7 @@ from app.api.schemas import (
 )
 from app.contracts.errors import CassetteMissError, CertusError, ConfigError
 from app.contracts.types import Band, Cell, Claim, Interval
+from app.core.grid.axis_admit import is_vendor_path
 from app.core.grid.cells import cell_id as make_cell_id
 from app.core.grid.cells import enumerate_t_wise
 from app.core.grid.project import project_cell
@@ -61,12 +63,22 @@ from app.orchestrator.observe import (
     observations_for_cells,
     scan_tests,
 )
+from app.orchestrator.provision import ProvisionPlan, detect_plan, run_suite
 from app.observability import tracing
 from app.observability.logging import get_logger
 from app.policy.data_policy import load_policy
 from app.settings import Settings, settings as default_settings
 
 log = get_logger()
+
+
+class SuiteRunFailed(CertusError):
+    """Bộ kiểm của repo đích không chạy được — chưa đo được gì.
+
+    Tách khỏi "test đỏ": test đỏ là một quan sát hợp lệ (`known_failure`), còn
+    cái này nghĩa là pytest chưa từng chạy tới phần thân. Fail-closed ở đây để
+    pipeline không phát ra một bảng grid trông như đã đo.
+    """
 
 
 # --------------------------------------------------------------------------
@@ -117,6 +129,8 @@ def discover_axes(root: Path) -> Axes:
 
     axes = Axes()
     for py in sorted(root.rglob("*.py")):
+        if is_vendor_path(py, root):
+            continue
         if "test" in py.parts or py.name.startswith("test_"):
             continue
         try:
@@ -331,7 +345,7 @@ def _analyze_nonce(req: AnalyzeRequest) -> str:
     theo (target/upload_id, question) giữ replay chạy được, mà vẫn là một giá
     trị mô hình phải chép lại đúng để chứng minh nó đã đọc khối chỉ thị này.
     """
-    seed = f"{req.target or req.upload_id}|{req.question}"
+    seed = f"{req.target or req.upload_id or req.local_path}|{req.question}"
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
 
 
@@ -447,13 +461,49 @@ class Pipeline:
     def _log(self, trace_id: str, level: str, msg: str):
         return self._event("log", trace_id, level=level, msg=msg)
 
+    @staticmethod
+    def _unwrap_single_dir(root: Path) -> Path:
+        """Đi xuống khi bản giải nén chỉ có ĐÚNG MỘT thư mục con.
+
+        `git archive` và nút "Download ZIP" của GitHub đều bọc toàn bộ repo
+        trong một thư mục mang tên repo, nên sau khi giải nén thì `pyproject
+        .toml`/`uv.lock`/`tests/` nằm sâu một tầng. Không đi xuống thì mọi thứ
+        dò theo gốc repo đều trượt: `detect_plan` không thấy lockfile nên chọn
+        interpreter của CERTUS, rồi pytest chết ở collect — và lỗi hiện ra là
+        "thiếu dependency", không phải "tôi tìm sai chỗ".
+
+        Chỉ đi xuống khi có ĐÚNG một thư mục và KHÔNG có tệp nào ở cùng tầng:
+        có tệp nghĩa là gốc repo thật sự ở đây (zip trải phẳng), và đi xuống sẽ
+        bỏ qua chính nó. Chỉ một tầng — nhiều tầng là đoán mò.
+        """
+        entries = [p for p in root.iterdir() if not p.name.startswith(".")]
+        dirs = [p for p in entries if p.is_dir()]
+        if len(entries) == 1 and len(dirs) == 1:
+            return dirs[0]
+        return root
+
     def resolve_target(self, req: AnalyzeRequest) -> Path:
-        if bool(req.target) == bool(req.upload_id):
+        sources = [bool(req.target), bool(req.upload_id), bool(req.local_path)]
+        if sum(sources) != 1:
             raise CertusError(
-                "phải có ĐÚNG một trong `target` và `upload_id`. Nhận cả hai (hoặc "
-                "không cái nào) là để ngỏ chuyện nội dung người dùng tải lên được "
-                "đối xử như repo mẫu đáng tin"
+                "phải có ĐÚNG một trong `target`, `upload_id` và `local_path`. Nhận "
+                "nhiều hơn một (hoặc không cái nào) là để ngỏ chuyện nội dung người "
+                "dùng đưa vào được đối xử như repo mẫu đáng tin"
             )
+        if req.local_path:
+            # Không có tường chứa nào ở đây — CÓ CHỦ ĐÍCH, và giới hạn của nó
+            # phải nói rõ: đường này cho người dùng trỏ vào BẤT KỲ thư mục nào
+            # trên máy chạy backend. An toàn vì backend chạy localhost trên máy
+            # của chính họ; một bản nhiều người dùng phải tắt hẳn đường này chứ
+            # không phải rào nó, vì "thư mục nào là của ai" không trả lời được
+            # từ trong tiến trình này.
+            root = Path(req.local_path).expanduser().resolve()
+            if not root.is_dir():
+                raise CertusError(
+                    f"không có thư mục {root} — kiểm tra lại đường dẫn (phải là "
+                    "đường dẫn trên máy đang chạy backend, không phải máy khác)"
+                )
+            return root
         if req.target:
             root = (self.cfg.targets_dir / req.target).resolve()
             if self.cfg.targets_dir.resolve() not in root.parents:
@@ -471,7 +521,7 @@ class Pipeline:
                 )
         if not root.is_dir():
             raise CertusError(f"không có thư mục {root}")
-        return root
+        return self._unwrap_single_dir(root) if req.upload_id else root
 
     async def run(self, req: AnalyzeRequest) -> AsyncIterator[StreamEvent]:
         started = time.time()
@@ -505,7 +555,10 @@ class Pipeline:
     async def _run_inner(
         self, req: AnalyzeRequest, trace_id: str
     ) -> AsyncIterator[StreamEvent]:
-        yield self._log(trace_id, "INFO", f"bắt đầu phân tích {req.target or req.upload_id}")
+        yield self._log(
+            trace_id, "INFO",
+            f"bắt đầu phân tích {req.target or req.upload_id or req.local_path}",
+        )
 
         yield self._step(trace_id, "resolve_target", "running")
         root = self.resolve_target(req)
@@ -515,9 +568,9 @@ class Pipeline:
         # thường floor về rất nhiều trục Enum (zones là của repo mẫu), auto-analyze sẽ
         # nổ cartesian và mọi con số grid vô nghĩa. Buộc HITL: người chốt 2–4 trục qua
         # /axes/discover rồi gửi confirmed_axes. Repo mẫu (target) miễn — trục cố định.
-        if req.upload_id and not req.confirmed_axes:
+        if (req.upload_id or req.local_path) and not req.confirmed_axes:
             raise CertusError(
-                "repo tải lên phải CHỌN TRỤC trước khi phân tích: gọi "
+                "repo thật phải CHỌN TRỤC trước khi phân tích: gọi "
                 "/api/axes/discover, chốt 2–4 trục rồi gửi lại kèm confirmed_axes. "
                 "(Repo mẫu thì không cần — trục đã cố định để bài giảng tất định.)"
             )
@@ -527,6 +580,11 @@ class Pipeline:
         sent, held = [], {}
         for path in sorted(root.rglob("*")):
             if not path.is_file():
+                continue
+            # Phụ thuộc bên thứ ba không phải DỮ LIỆU của người dùng: quét
+            # `.venv` ở đây làm bảng "đã gửi/đã giữ" ngập hàng vạn file thư viện
+            # và chôn mất đúng những tệp mà chính sách cần cho người đọc thấy.
+            if is_vendor_path(path, root):
                 continue
             rel = str(path.relative_to(root))
             decision = policy.decide(rel)
@@ -557,12 +615,52 @@ class Pipeline:
             source=axes.source, **axis_meta,
         )
         tests = scan_tests(root)
-        suite_exit, cov_suite, (lines_hit, lines_total) = run_target_suite(root)
+
+        # Dựng môi trường CHẠY ĐƯỢC cho repo lạ, rồi chạy bộ kiểm của nó, phát
+        # từng dòng log ngay khi nó ra. Một bộ kiểm thật mất 2–3 phút; im lặng
+        # 3 phút không phân biệt được với treo, nên log phải chảy chứ không dồn.
+        plan = detect_plan(root, user_argv=req.test_command)
+        yield self._event(
+            "log", trace_id, level="INFO",
+            msg=f"môi trường chạy bộ kiểm: {plan.kind} — {plan.reason}",
+        )
+        for line in plan.steps:
+            yield self._event("log", trace_id, level="INFO", msg=f"  · {line}")
+        yield self._event(
+            "log", trace_id, level="INFO", msg=f"$ {' '.join(plan.argv)}"
+        )
+
+        # Bộ kiểm chạy trong một luồng riêng (nó là subprocess đồng bộ) còn
+        # generator này phải nhả sự kiện giữa chừng. Hàng đợi nối hai nhịp đó —
+        # cùng cơ chế đã dùng cho token của bước diễn giải.
+        log_queue: asyncio.Queue[str | None] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def _emit(line: str) -> None:
+            loop.call_soon_threadsafe(log_queue.put_nowait, line)
+
+        async def _run() -> tuple[int, set[str], tuple[int, int]]:
+            try:
+                return await asyncio.to_thread(
+                    run_target_suite, root, plan, req.test_env, _emit
+                )
+            finally:
+                loop.call_soon_threadsafe(log_queue.put_nowait, None)
+
+        suite_task = asyncio.create_task(_run())
+        while True:
+            line = await log_queue.get()
+            if line is None:
+                break
+            yield self._event("log", trace_id, level="TEST", msg=line)
+        suite_exit, cov_suite, (lines_hit, lines_total) = await suite_task
+
         yield self._step(
             trace_id, "run_tests",
             test_functions=len(tests), exit_code=suite_exit,
             lines_covered=len(cov_suite),
             lines_hit=lines_hit, lines_total=lines_total,
+            env_kind=plan.kind, command=" ".join(plan.argv),
         )
         # `read_coverage` là bước 5 trong STAGES. Nó gộp VẬT LÝ vào run_tests (cùng
         # một `run_target_suite`), nhưng vẫn phát THÀNH bước riêng — nếu không, sidebar
@@ -572,9 +670,20 @@ class Pipeline:
             trace_id, "read_coverage",
             lines_hit=lines_hit, lines_total=lines_total,
         )
+        # `code_path` phải là một ký hiệu CÓ THẬT trong repo đang chấm. Bản cũ
+        # ghim cứng `"checkout"` cho mọi repo — repo nào không có tên ấy thì
+        # không ô nào chạm tới, rơi `coverage_mismatch` toàn bảng, và grid ra
+        # full unknown dù bộ kiểm chạy hoàn hảo.
+        entry_symbol = infer_entry_symbol(root, cov_suite)
+        if entry_symbol is None:
+            raise CertusError(
+                "không neo được `code_path` vào ký hiệu nào của repo: bộ kiểm chạy "
+                "nhưng không chạm hàm cấp module nào. Mọi ô sẽ là 'chưa ai canh' — "
+                "đó là chuyện thiếu bằng chứng, không phải một phép đo."
+            )
         obs_table = observations_for_cells(
             tests,
-            code_path=self.cfg.__dict__.get("entry_symbol", "checkout"),
+            code_path=entry_symbol,
             cov_suite=cov_suite,
             suite_exit_code=suite_exit,
         )
@@ -635,6 +744,32 @@ class Pipeline:
             confidence=grid_rate.point,
         )
 
+        # ── gate: sàn grid per-zone — bước 8, CHẠY TRƯỚC bước diễn giải ─────
+        # Cổng chỉ đọc `per_zone` (đã có ngay trên), không đọc claim nào, nên nó
+        # xong được từ đây. Trước đây khối này nằm SAU `explain`, khiến bước 9
+        # phát `running` trước khi bước 8 phát `done` — thanh tiến trình nhảy
+        # ngược 9 → 8 → 9. Chạy đúng thứ tự thì bước 8 đóng trước khi bước 9 mở.
+        floor_verdicts = evaluate_floor(per_zone, load_floors())
+        blocking_failures = [
+            zid for zid, v in floor_verdicts.items()
+            if per_zone[zid]["w"] >= blocking_w and not v["meets_floor"]
+        ]
+        for zid, v in floor_verdicts.items():
+            yield self._event(
+                "gate", trace_id, zone_id=zid,
+                blocking=per_zone[zid]["w"] >= blocking_w, **v,
+            )
+        blocked = bool(blocking_failures)
+        # Bước 8 khai đúng thứ nó đo được: cổng có chặn không. `verdict` cuối cùng
+        # còn phụ thuộc "có claim nào ra không" — đó là kết quả của bước 9, không
+        # phải của cổng, nên nó thuộc về `response` chứ không thuộc payload này.
+        yield self._step(
+            trace_id, "run_gates",
+            zones=len(floor_verdicts),
+            blocking_failures=len(blocking_failures),
+            blocked=blocked,
+        )
+
         # ── giai đoạn DIỄN GIẢI: mô hình ĐỌC số, code đã TÍNH xong ──────────
         # Đây là chỗ DUY NHẤT tầng agent chạm pipeline. Khối này từng bị bỏ
         # trống (claims=[], gates=[], verdict="inconclusive"), nên mọi lỗi sống
@@ -669,19 +804,45 @@ class Pipeline:
         llm_warnings: list[str] = []
         span = tracing.llm_span("analyze.explain")
         client = LLMClient(self.cfg)
+        # Token phải chảy TRONG lúc mô hình viết, không dồn ra sau. Bản cũ `await`
+        # cho xong `complete()` rồi mới lặp `resp.chunks` — đo trên một lượt live
+        # thật: 57 giây, trong đó ~50 giây im lặng tuyệt đối rồi mọi token đến cùng
+        # lúc. Với người đang nhìn, im lặng 50 giây không phân biệt được với đã
+        # treo; endpoint là SSE nhưng phần tốn thời gian nhất của nó không stream.
+        #
+        # `complete()` là một `await` còn ta cần phát giữa chừng, nên hàng đợi nối
+        # hai nhịp: lượt gọi chạy như một task, `on_chunk` đẩy vào queue, vòng dưới
+        # rút ra và phát tiếp. Cùng cơ chế đã dùng ở `ChatSession.run`.
+        queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+        async def _push(chunk: str) -> None:
+            await queue.put(chunk)
+
+        async def _ask() -> LLMResponse:
+            try:
+                return await client.complete(
+                    system=system,
+                    messages=[{"role": "user", "content": prompt}],
+                    cassette_hint="analyze",
+                    # Mồi `{` để ép mọi model (kể cả Haiku yếu) tiếp nối thành đúng
+                    # object JSON như "Định dạng trả lời" đòi, thay vì đáp văn xuôi
+                    # rồi rớt về cảnh báo "không đọc được câu trả lời". Chỉ tác động
+                    # đường API thật; mock/cassette của lớp không đổi khoá.
+                    prefill="{",
+                    on_chunk=_push,
+                )
+            finally:
+                await queue.put(None)  # sentinel: hết chữ, dù xong hay lỗi
+
+        task = asyncio.create_task(_ask())
+        while True:
+            chunk = await queue.get()
+            if chunk is None:
+                break
+            yield self._event("token", trace_id, text=chunk)
+
         try:
-            resp = await client.complete(
-                system=system,
-                messages=[{"role": "user", "content": prompt}],
-                cassette_hint="analyze",
-                # Mồi `{` để ép mọi model (kể cả Haiku yếu) tiếp nối thành đúng
-                # object JSON như "Định dạng trả lời" đòi, thay vì đáp văn xuôi rồi
-                # rớt về cảnh báo "không đọc được câu trả lời". Chỉ tác động đường
-                # API thật; mock/cassette của lớp không đổi khoá.
-                prefill="{",
-            )
-            for chunk in resp.chunks or ([resp.text] if resp.text else []):
-                yield self._event("token", trace_id, text=chunk)
+            resp = await task
             span.finish(
                 status="ok", from_cassette=resp.from_cassette,
                 model=resp.model, stop_reason=resp.stop_reason,
@@ -726,28 +887,10 @@ class Pipeline:
         for c in claims:
             yield self._event("claim", trace_id, claim=c.model_dump(mode="json"))
 
-        # ── gate: sàn grid per-zone — cổng tự nhiên của luồng analyze ───────
-        floor_verdicts = evaluate_floor(per_zone, load_floors())
-        blocking_failures = [
-            zid for zid, v in floor_verdicts.items()
-            if per_zone[zid]["w"] >= blocking_w and not v["meets_floor"]
-        ]
-        for zid, v in floor_verdicts.items():
-            yield self._event(
-                "gate", trace_id, zone_id=zid,
-                blocking=per_zone[zid]["w"] >= blocking_w, **v,
-            )
-        blocked = bool(blocking_failures)
+        # Phán quyết cuối gộp HAI nguồn: cổng (bước 8) và việc bước 9 có ra được
+        # claim nào không. `blocked` thắng — một lượt bị cổng chặn thì dù mô hình
+        # nói gì cũng không thành "pass".
         verdict = "blocked" if blocked else ("pass" if claims else "inconclusive")
-        # `run_gates` là bước 8 trong STAGES: chuỗi cổng sàn per-zone vừa chạy ở
-        # trên. Trước đây nó chỉ phát sự kiện `gate` cho từng zone mà KHÔNG phát
-        # `step`, nên sidebar hiện bước 8 "chưa chạy" dù cổng đã chấm.
-        yield self._step(
-            trace_id, "run_gates",
-            zones=len(floor_verdicts),
-            blocking_failures=len(blocking_failures),
-            verdict=verdict,
-        )
 
         # Cảnh báo giữ tệp phải NÊU RÕ tệp nào — "1 tệp bị giữ lại" không cho người
         # đọc biết gì để đối chiếu với danh sách "đã gửi". `held` là {đường-dẫn:
@@ -761,7 +904,7 @@ class Pipeline:
         response = AnalyzeResponse(
             run_id=trace_id,
             trace_id=trace_id,
-            target=req.target or str(req.upload_id),
+            target=req.target or req.upload_id or str(req.local_path),
             coverage=coverage,
             claims=[ClaimOut(claim=c, supported_by=c.evidence_ids) for c in claims],
             gates=[],
@@ -811,16 +954,23 @@ async def analyze(req: AnalyzeRequest, settings: Settings | None = None) -> Pipe
     return PipelineResult(response=response, events=events)
 
 
-def run_target_suite(root: Path) -> tuple[int, set[str], tuple[int, int]]:
+def run_target_suite(
+    root: Path,
+    plan: ProvisionPlan | None = None,
+    extra_env: Mapping[str, str] | None = None,
+    on_line: Callable[[str], None] | None = None,
+) -> tuple[int, set[str], tuple[int, int]]:
     """Chạy bộ kiểm của repo đích và đọc lại phần nó đã chạm.
 
-    Đi qua `core/exec/runner` chứ không gọi `subprocess` thẳng: đó là chỗ duy
-    nhất có allowlist và có ghi sổ bằng chứng. Một lối chạy thứ hai, dù chỉ để
-    tiện, là một lối vòng qua cả hai thứ đó.
-    """
-    from app.core.exec.runner import run_probe
+    Đi qua `core/exec/runner` (gián tiếp qua `provision.run_suite`) chứ không
+    gọi `subprocess` thẳng: đó là chỗ duy nhất có allowlist và có ghi sổ bằng
+    chứng. Một lối chạy thứ hai, dù chỉ để tiện, là một lối vòng qua cả hai.
 
-    result = run_probe(root, ["coverage", "run", "-m", "pytest", "-q"])
+    `plan` None ⇒ tự dò (giữ nguyên hành vi cũ cho mọi người gọi cũ).
+    """
+    if plan is None:
+        plan = detect_plan(root)
+    outcome = run_suite(root, plan, extra_env=extra_env, on_line=on_line)
     covered: set[str] = set()
     lines_hit = 0
     lines_total = 0
@@ -854,7 +1004,7 @@ def run_target_suite(root: Path) -> tuple[int, set[str], tuple[int, int]]:
     # Tên hàm cấp module cũng được coi là "đã chạm", để `code_path` tra được
     # bằng tên hàm thay vì bằng số dòng.
     for py in root.rglob("*.py"):
-        if py.stem.startswith("test_"):
+        if is_vendor_path(py, root) or py.stem.startswith("test_"):
             continue
         try:
             import ast as _ast
@@ -867,4 +1017,77 @@ def run_target_suite(root: Path) -> tuple[int, set[str], tuple[int, int]]:
     # Không bao giờ để hit > total: nếu xảy ra thì mẫu số sai, và một tỉ lệ
     # trên 100% là dấu hiệu đầu tiên nhìn thấy được của chuyện đó.
     lines_total = max(lines_total, lines_hit)
-    return result.exit_code, covered, (lines_hit, lines_total)
+
+    # ── bộ kiểm KHÔNG chạy được ⇒ dừng, không đo tiếp ────────────────────────
+    # Exit code khác 0 mà KHÔNG thu được dòng phủ nào nghĩa là pytest chưa từng
+    # chạy tới phần thân: collect fail, thiếu dependency, import nổ. Trả
+    # `(exit, set(), (0,0))` rồi đi tiếp thì mọi ô rơi `coverage_mismatch` và UI
+    # hiện "chưa ai canh" — người đọc hiểu thành "repo này không có test", trong
+    # khi sự thật là "CERTUS không chạy được test của repo này". Đó là biến
+    # "tôi không đo được" thành "tôi đã đo và kết quả tệ".
+    #
+    # Test ĐỎ thì khác: pytest chạy thật, có dòng phủ, exit khác 0 là một quan
+    # sát HỢP LỆ (`known_failure` ở project.py hàng 3). Nên điều kiện là exit
+    # khác 0 VÀ không thu được gì, không phải exit khác 0 đơn thuần.
+    # Sandbox CẮT NGANG (hết giờ, ngoài allowlist) không phải một phép đo, kể
+    # cả khi lượt chạy dở đã kịp ghi `.coverage`: con số đó là của một bộ kiểm
+    # chạy được 8% rồi bị giết. Báo "đo xong" ở đây là lỗi tệ nhất trong tệp
+    # này — nó cho ra một bảng grid trông hoàn chỉnh dựng trên số liệu cụt.
+    if not outcome.ran:
+        raise SuiteRunFailed(
+            f"lượt chạy bộ kiểm bị cắt ngang: {outcome.block_reason or 'không rõ lý do'}. "
+            "Đây KHÔNG phải một phép đo — phần đã chạy được không đại diện cho cả "
+            "bộ kiểm.\n"
+            f"Môi trường: {outcome.plan.kind} — {outcome.plan.reason}\n"
+            f"Lệnh: {' '.join(outcome.plan.argv)}\n"
+            f"Đuôi log:\n{outcome.output_tail}"
+        )
+    if outcome.exit_code != 0 and not covered:
+        raise SuiteRunFailed(
+            f"bộ kiểm của repo đích không chạy được (exit={outcome.exit_code}, "
+            "không thu được dòng phủ nào) — thường là thiếu dependency hoặc import "
+            "lỗi lúc collect. Chưa đo được gì thì mọi con số phủ phía sau đều vô "
+            f"nghĩa.\nMôi trường đã dùng: {outcome.plan.kind} — {outcome.plan.reason}\n"
+            f"Lệnh: {' '.join(outcome.plan.argv)}\n"
+            f"Đuôi log:\n{outcome.output_tail}"
+        )
+    return outcome.exit_code, covered, (lines_hit, lines_total)
+
+
+def infer_entry_symbol(root: Path, cov_suite: set[str]) -> str | None:
+    """Ký hiệu để neo `code_path` — suy từ REPO, không phải một hằng số.
+
+    `code_path` là thứ `project.py` hỏi "ô này có ai chạm không". Ghim cứng một
+    cái tên (`"checkout"`) làm mọi repo không có ký hiệu ấy rơi `coverage_mismatch`
+    toàn bảng — full unknown kể cả khi bộ kiểm chạy hoàn hảo. Con số sai đó im
+    lặng, và nó tệ hơn không có con số.
+
+    Luật chọn, theo thứ tự:
+    1. `checkout` nếu repo có — giữ bất biến cho repo mẫu (cassette + golden).
+    2. Hàm cấp module ĐÃ ĐƯỢC PHỦ, nhiều dòng nhất — hàm to nhất mà bộ kiểm thật
+       sự chạm là cái neo được vào bằng chứng.
+    3. `None` nếu không suy được, để nơi gọi khai thẳng thay vì bịa một cái tên.
+    """
+    if "checkout" in cov_suite:
+        return "checkout"
+    import ast as _ast
+
+    best: tuple[int, str] | None = None
+    for py in sorted(root.rglob("*.py")):
+        if is_vendor_path(py, root) or py.stem.startswith("test_") or py.stem == "conftest":
+            continue
+        try:
+            tree = _ast.parse(py.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError, OSError):
+            continue
+        for node in tree.body:  # cấp module thôi — khớp cách covered được nạp
+            if not isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+                continue
+            if node.name not in cov_suite:
+                continue
+            size = (getattr(node, "end_lineno", node.lineno) or node.lineno) - node.lineno
+            # Hoà số dòng thì lấy tên NHỎ hơn theo thứ tự chữ — để hai lượt chạy
+            # trên cùng một repo luôn cho cùng một ký hiệu.
+            if best is None or size > best[0] or (size == best[0] and node.name < best[1]):
+                best = (size, node.name)
+    return best[1] if best else None

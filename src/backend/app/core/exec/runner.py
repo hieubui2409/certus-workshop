@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -224,7 +225,10 @@ class ProbeResult:
 #: Danh sách này KHÔNG nằm trong exec.yaml vì nó không phải một ngưỡng: nó không
 #: có đơn vị, không có độ nhạy, không có "giá trị khởi điểm minh hoạ". Luật ba
 #: vế của SDD 00 §4 nói về ngưỡng.
-ALLOWED_COMMANDS = {"pytest", "coverage", "python"}
+#: `uv` có mặt vì một repo thật hầu như không bao giờ chạy được bằng interpreter
+#: của CERTUS: nó có Python riêng, dependency riêng, thường cả một lockfile. `uv
+#: run` là cách dựng đúng môi trường đó mà không bắt người dùng tự cài trước.
+ALLOWED_COMMANDS = {"pytest", "coverage", "python", "uv"}
 
 
 def _is_allowed(argv: list[str]) -> bool:
@@ -253,7 +257,9 @@ def _truncate(text: str, limit: int) -> str:
     return text.encode("utf-8", "replace")[:limit].decode("utf-8", "replace")
 
 
-def _child_env(cfg: ExecConfig, run_dir: Path) -> dict[str, str]:
+def _child_env(
+    cfg: ExecConfig, run_dir: Path, extra: Mapping[str, str] | None = None
+) -> dict[str, str]:
     """Dựng môi trường cho tiến trình con.
 
     Chỉ những biến khai trong `runner.env_passthrough` được đi xuyên — mặc định
@@ -261,31 +267,89 @@ def _child_env(cfg: ExecConfig, run_dir: Path) -> dict[str, str]:
     Bốn biến còn lại do runner tự đặt và trỏ vào thư mục tạm của lượt chạy, để
     tiến trình con không rải `__pycache__` vào cây mã người dùng và để hai lượt
     chạy cùng đầu vào cho cùng kết quả (PYTHONHASHSEED).
+
+    `extra` là biến NGƯỜI DÙNG khai cho repo đích (vd `VSF_DATABASE_URL`). Nó
+    không đi qua allowlist vì allowlist canh biến của MÁY CHỦ rò xuống tiến
+    trình con; đây là chiều ngược lại — người dùng chủ động khai cho repo của
+    chính họ. Đặt SAU cùng nhưng KHÔNG được đè bốn biến runner tự đặt: chúng là
+    thứ giữ cho lượt chạy sạch và tái lập được.
     """
     env = {name: os.environ[name] for name in cfg.runner.env_passthrough if name in os.environ}
     env.setdefault("PATH", os.defpath)
+    if extra:
+        env.update({str(k): str(v) for k, v in extra.items()})
     env["TMPDIR"] = str(run_dir)
     env["PYTHONPYCACHEPREFIX"] = str(run_dir / "pycache")
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONHASHSEED"] = "0"
+    # Không có cái này thì việc đọc-theo-dòng ở trên là vô nghĩa: Python đệm
+    # stdout theo KHỐI khi đầu ra không phải terminal, nên pytest chạy 2 phút
+    # rưỡi mà log chỉ ra thành 2 lần xả. Người xem thấy im lặng rồi một cục —
+    # đúng thứ mà việc stream sinh ra để tránh.
+    env["PYTHONUNBUFFERED"] = "1"
     return env
 
 
 def _run_subprocess(
-    workspace: Path, argv: list[str], *, cfg: ExecConfig, timeout_s: int
+    workspace: Path,
+    argv: list[str],
+    *,
+    cfg: ExecConfig,
+    timeout_s: int,
+    extra_env: Mapping[str, str] | None = None,
+    on_line: Callable[[str], None] | None = None,
 ) -> tuple[int, str, str, bool, str | None]:
+    """Chạy lệnh; nếu có `on_line` thì đọc output THEO DÒNG và gọi lại ngay.
+
+    `subprocess.run(capture_output=True)` chỉ trả về khi tiến trình đã chết —
+    với một bộ kiểm chạy 2–3 phút, đó là 3 phút màn hình trắng. Nhánh `on_line`
+    đọc dòng-một để UI thấy tiến trình NGAY khi nó xảy ra. Gộp stderr vào stdout
+    ở nhánh này có chủ đích: người đọc log cần thấy đúng thứ tự thời gian giữa
+    hai luồng, mà hai ống riêng thì không có cách nào ghép lại đúng thứ tự.
+    """
     run_dir = Path(tempfile.mkdtemp(prefix="certus-probe-"))
+    env = _child_env(cfg, run_dir, extra_env)
     try:
-        proc = subprocess.run(  # noqa: S603 - argv đã qua _is_allowed
+        if on_line is None:
+            proc = subprocess.run(  # noqa: S603 - argv đã qua _is_allowed
+                argv,
+                cwd=str(workspace),
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+                check=False,
+            )
+            return proc.returncode, proc.stdout, proc.stderr, False, None
+
+        lines: list[str] = []
+        deadline = time.monotonic() + timeout_s
+        popen = subprocess.Popen(  # noqa: S603 - argv đã qua _is_allowed
             argv,
             cwd=str(workspace),
-            env=_child_env(cfg, run_dir),
-            capture_output=True,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            timeout=timeout_s,
-            check=False,
+            bufsize=1,
         )
-        return proc.returncode, proc.stdout, proc.stderr, False, None
+        try:
+            assert popen.stdout is not None
+            for raw in popen.stdout:
+                line = raw.rstrip("\n")
+                lines.append(line)
+                on_line(line)
+                if time.monotonic() > deadline:
+                    popen.kill()
+                    return (
+                        EXIT_TIMEOUT, "\n".join(lines), "", True,
+                        f"quá thời gian {timeout_s}s",
+                    )
+            code = popen.wait(timeout=max(1, int(deadline - time.monotonic())))
+        finally:
+            if popen.poll() is None:
+                popen.kill()
+        return code, "\n".join(lines), "", False, None
     except subprocess.TimeoutExpired as exc:
         out = exc.stdout or ""
         err = exc.stderr or ""
@@ -362,12 +426,18 @@ def run_probe(
     claim_id: str = "probe",
     timeout_s: int | None = None,
     config: ExecConfig | None = None,
+    extra_env: Mapping[str, str] | None = None,
+    on_line: Callable[[str], None] | None = None,
 ) -> ProbeResult:
     """Chạy `argv` trong `workspace` và ghi đúng một record vào sổ bằng chứng.
 
     Ghi sổ nằm ở nhánh chung — lệnh bị chặn cũng có record, với verdict
     UNVERIFIED. "Không có gì để soi" phải NHÌN THẤY được trong sổ, chứ không
     được biểu hiện bằng sự vắng mặt của một dòng.
+
+    `extra_env`: biến môi trường người dùng khai cho repo đích. `on_line`: gọi
+    lại cho TỪNG dòng output ngay khi nó ra — chỉ đường subprocess; docker vẫn
+    gom log ở cuối vì SDK trả log theo lô.
     """
     cfg = config or load_exec_config()
     book = ledger if ledger is not None else _resolve_ledger()
@@ -390,7 +460,8 @@ def run_probe(
         )
     else:
         exit_code, stdout, stderr, blocked, block_reason = _run_subprocess(
-            workspace, argv, cfg=cfg, timeout_s=limit
+            workspace, argv, cfg=cfg, timeout_s=limit,
+            extra_env=extra_env, on_line=on_line,
         )
     duration_ms = int((time.perf_counter() - started) * 1000)
 

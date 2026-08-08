@@ -15,7 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -196,10 +196,16 @@ class LLMClient:
         max_tokens: int | None = None,
         cassette_hint: str | None = None,
         prefill: str | None = None,
+        on_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
-        """Gọi model và gom toàn bộ câu trả lời."""
+        """Gọi model và gom toàn bộ câu trả lời.
+
+        `on_chunk`: gọi cho TỪNG mẩu chữ ngay khi nó về. Người gọi cần cả hai —
+        chữ chảy ra màn hình lúc mô hình đang viết, VÀ câu đầy đủ để xử lý sau —
+        mà không phải tự dựng lại vòng lặp stream (rồi lệch khỏi bản này).
+        """
         self._last_response = None
-        async for _chunk in self.stream(
+        async for chunk in self.stream(
             system=system,
             messages=messages,
             tools=tools,
@@ -207,7 +213,8 @@ class LLMClient:
             cassette_hint=cassette_hint,
             prefill=prefill,
         ):
-            pass
+            if on_chunk is not None:
+                await on_chunk(chunk)
         response = self._last_response
         if response is None:  # pragma: no cover - stream luôn set trước khi kết thúc
             raise RuntimeError("stream() kết thúc mà không sinh LLMResponse")
@@ -320,6 +327,7 @@ class LLMClient:
         registry: Any,
         max_rounds: int = 6,
         cassette_hint: str | None = "chat",
+        on_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> "ToolLoopResult":
         """Vòng lặp tool-use: gọi model, thực thi tool nó đòi, gọi lại tới khi end_turn.
 
@@ -334,7 +342,8 @@ class LLMClient:
 
         for round_no in range(1, max_rounds + 1):
             resp = await self.complete(
-                system=system, messages=convo, tools=tools, cassette_hint=cassette_hint
+                system=system, messages=convo, tools=tools, cassette_hint=cassette_hint,
+                on_chunk=on_chunk,
             )
             if resp.stop_reason != "tool_use":
                 return ToolLoopResult(

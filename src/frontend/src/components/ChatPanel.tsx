@@ -28,11 +28,47 @@ const SUGGESTIONS = [
 ];
 
 /**
+ * Rút phần `"answer": "…"` ra khỏi một chuỗi JSON CÒN DANG DỞ.
+ *
+ * Cần hàm này vì token bây giờ chảy thật (backend phát từng mẩu trong lúc mô
+ * hình viết, không dồn ra cuối). Nếu chỉ `JSON.parse` được bản hoàn chỉnh thì
+ * suốt mấy chục giây người dùng nhìn thấy JSON thô đang bò ra — tệ hơn cả im
+ * lặng, vì nó trông như hệ thống hỏng.
+ *
+ * Quét thủ công thay vì parse: cắt từ dấu `"` mở của giá trị, đọc tới dấu `"`
+ * đóng chưa-thoát (nếu chưa có thì lấy hết những gì đã tới), rồi giải mã escape.
+ * Trả `null` khi chưa thấy khoá `answer` — người gọi tự quyết hiển thị gì.
+ */
+function partialAnswer(raw: string): string | null {
+  const at = raw.search(/"answer"\s*:\s*"/);
+  if (at < 0) return null;
+  const start = raw.indexOf('"', raw.indexOf(':', at)) + 1;
+  let out = '';
+  for (let i = start; i < raw.length; i += 1) {
+    const ch = raw[i];
+    if (ch === '\\') {
+      const nxt = raw[i + 1];
+      if (nxt === undefined) break; // escape bị cắt giữa chừng — dừng, chờ mẩu sau
+      out +=
+        nxt === 'n' ? '\n'
+        : nxt === 't' ? '\t'
+        : nxt === 'r' ? '\r'
+        : nxt === 'u' ? String.fromCharCode(parseInt(raw.slice(i + 2, i + 6), 16) || 0)
+        : nxt;
+      i += nxt === 'u' ? 5 : 1;
+      continue;
+    }
+    if (ch === '"') break; // hết giá trị
+    out += ch;
+  }
+  return out;
+}
+
+/**
  * Bước diễn giải của backend thật bắt mô hình trả một object JSON
- * `{nonce, answer, claims}`; `event: token` stream NGUYÊN văn JSON đó. Khi lượt
- * đã xong, chuỗi là JSON hoàn chỉnh — lấy đúng phần `answer` (prose) để hiển thị.
- * Mock phát prose thẳng (không mở `{`) nên bỏ qua; JSON đang stream dở parse
- * lỗi nên cũng bỏ qua — người dùng thấy nó hình thành rồi snap về prose khi xong.
+ * `{nonce, answer, claims}`; `event: token` stream NGUYÊN văn JSON đó. Lượt xong
+ * thì parse đàng hoàng; lượt đang chạy thì rút tạm phần `answer` đã tới.
+ * Mock/live phát prose thẳng (không mở `{`) nên trả nguyên.
  * KHÔNG đụng tới `claims`: chúng có bảng riêng ở Claim inspector.
  */
 function displayAnswer(answer: string): string {
@@ -44,9 +80,9 @@ function displayAnswer(answer: string): string {
       return obj.answer;
     }
   } catch {
-    /* JSON chưa hoàn chỉnh (đang stream) — giữ thô cho tới khi lượt xong */
+    /* JSON chưa hoàn chỉnh (đang stream) — rút tạm phần đã tới */
   }
-  return answer;
+  return partialAnswer(trimmed) ?? '';
 }
 
 export function ChatPanel({
@@ -59,6 +95,7 @@ export function ChatPanel({
   disabled,
 }: Props) {
   const running = status === 'running';
+  const shown = displayAnswer(answer);
 
   return (
     <Stack gap="sm">
@@ -122,15 +159,38 @@ export function ChatPanel({
         </Text>
       )}
 
+      {/* Điều kiện rỗng phải xét chuỗi ĐÃ RÚT, không phải chuỗi thô: những mẩu
+          đầu của một câu trả lời JSON là `{"nonce": …` — có độ dài nhưng chưa có
+          chữ nào cho người đọc. Xét chuỗi thô thì ô hiện trống trơn thay vì báo
+          đang chờ. */}
       <Paper withBorder p="md" radius="md" mih={180}>
-        {answer.length === 0 ? (
+        {shown.length === 0 ? (
           <Text size="sm" c="dimmed">
             {running ? 'Đang chờ token đầu tiên…' : 'Câu trả lời sẽ hiện dần ở đây.'}
           </Text>
         ) : (
           <ScrollArea.Autosize mah={340} type="auto">
             <Box style={{ whiteSpace: 'pre-wrap' }}>
-              <Text size="sm">{displayAnswer(answer)}</Text>
+              <Text size="sm">
+                {shown}
+                {/* Con trỏ nháy: dấu hiệu "còn đang viết", cùng animation với
+                    khung chat. Keyframe khai tại chỗ vì dự án chưa có CSS toàn cục. */}
+                {running && (
+                  <>
+                    <Box
+                      component="span"
+                      ml={2}
+                      style={{
+                        display: 'inline-block',
+                        width: '0.5em',
+                        borderBottom: '2px solid currentColor',
+                        animation: 'certus-caret 1s steps(2) infinite',
+                      }}
+                    />
+                    <style>{'@keyframes certus-caret{50%{opacity:0}}'}</style>
+                  </>
+                )}
+              </Text>
             </Box>
           </ScrollArea.Autosize>
         )}

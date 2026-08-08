@@ -34,11 +34,46 @@ __all__ = [
     "AxisCandidate",
     "AdmissionResult",
     "AdmitConfig",
+    "VENDOR_DIRS",
+    "is_vendor_path",
     "load_admit_config",
     "admit_axis",
 ]
 
 _SOURCE = "grid.yaml"
+
+#: Thư mục KHÔNG chứa mã nguồn của repo đang chấm — phụ thuộc bên thứ ba, sản
+#: phẩm build, cache công cụ. Mọi lượt duyệt cây tìm "code của repo" phải loại
+#: chúng. Ở đây (module lá) chứ không ở pipeline: cả `discover_axes` lẫn
+#: `axis_sources.propose_candidates` đều cần, và pipeline import axis_sources —
+#: đặt ngược lại là một vòng import.
+VENDOR_DIRS = frozenset(
+    {
+        ".venv", "venv", ".env", "env",
+        "site-packages", "node_modules", "vendor",
+        ".git", ".tox", ".nox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+        "__pycache__", "build", "dist", ".eggs",
+    }
+)
+
+
+def is_vendor_path(path: Path, root: Path) -> bool:
+    """True nếu `path` nằm trong một thư mục vendor tính từ `root`.
+
+    Đây là ranh giới "code CỦA AI": một `class ExitCode(Enum)` trong
+    `site-packages/_pytest` là chiều rủi ro của pytest, không của repo đang
+    chấm. Đo thật trên một repo đã cài đủ phụ thuộc: 97 trục tìm được, 84 đến
+    từ `.venv` — mẫu số nổ lên 220k ô, 99% `unknown`. Con số đó không phải
+    "phủ kém", nó VÔ NGHĨA, mà lại trông y hệt một phép đo.
+
+    Loại theo TÊN THƯ MỤC chứ không theo đường dẫn tuyệt đối: repo này có
+    `.venv` ngay tại gốc, repo khác chôn nó ở tầng con.
+    """
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        return True  # ngoài cây đang chấm thì càng không phải code của repo
+    return any(p in VENDOR_DIRS for p in parts)
 
 
 @dataclass(frozen=True)

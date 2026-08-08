@@ -17,6 +17,7 @@ import {
   AppShell,
   Badge,
   Button,
+  Code,
   Container,
   Grid,
   Group,
@@ -24,6 +25,8 @@ import {
   Stack,
   Tabs,
   Text,
+  Textarea,
+  TextInput,
   Title,
   Tooltip,
   useComputedColorScheme,
@@ -61,6 +64,7 @@ import { TraceViewer } from '@/components/TraceViewer';
 import { PromptDataPanel } from '@/components/PromptDataPanel';
 import { WarningFeed } from '@/components/WarningFeed';
 import { StepProgress } from '@/components/StepProgress';
+import { SuiteLog } from '@/components/SuiteLog';
 
 import { getCoverage, getPromptPayload, openAnalyzeStream, USE_MOCK } from '@/api/analyze';
 import { useAnalysisStore } from '@/store/analysisStore';
@@ -74,6 +78,12 @@ export default function App() {
   const [upload, setUpload] = useState<UploadResult | null>(null);
   const [question, setQuestion] = useState('Bộ kiểm thử của repo này phủ tới đâu?');
   const [confirmedAxes, setConfirmedAxes] = useState<Record<string, string[]> | null>(null);
+  // Cách chạy bộ kiểm của repo đích. Bỏ trống ⇒ backend tự dò (uv / venv sẵn có
+  // / môi trường CERTUS). Có ô này vì không cách nào đoán đúng cho mọi repo:
+  // nhiều repo có guard trong conftest đòi đúng một biến trước khi cho chạy,
+  // và không khai được thì không đo được.
+  const [testCommand, setTestCommand] = useState('');
+  const [testEnv, setTestEnv] = useState('');
   const [tab, setTab] = useState<string>('upload');
   const abortRef = useRef<AbortController | null>(null);
 
@@ -111,11 +121,20 @@ export default function App() {
     // `upload_id` (tệp vừa tải lên thật) — không có trường `run_id`. Repo mẫu
     // không đi qua `/api/upload` nên chỉ có `target`; tệp .zip thật thì
     // `client.uploadZip` đã gắn `upload_id` từ `UploadAck` trả về.
+    const env = parseEnv(testEnv);
     const req = {
       ...(upload.target
         ? { target: upload.target }
-        : { upload_id: upload.upload_id ?? upload.run_id }),
+        : upload.local_path
+          ? { local_path: upload.local_path }
+          : { upload_id: upload.upload_id ?? upload.run_id }),
       question,
+      // Lệnh/biến môi trường chỉ gửi khi người dùng THẬT SỰ khai. Gửi mảng rỗng
+      // hay object rỗng sẽ vô hiệu hoá phần tự dò của backend, và lúc đó repo
+      // nào cần `uv` cũng chết ở collect — một lỗi do UI gây ra mà backend
+      // không cách nào biết là do UI.
+      ...(testCommand.trim() ? { test_command: testCommand.trim().split(/\s+/) } : {}),
+      ...(env ? { test_env: env } : {}),
       // HITL: gửi confirmed_axes khi người dùng đã chốt. Repo mẫu bỏ trống ⇒ engine
       // dùng đúng tập Enum cố định (cassette bất biến). Repo thật BỎ TRỐNG bị backend
       // chặn — nút chạy đã khóa tới khi chốt trục (needsAxisSelection).
@@ -127,7 +146,7 @@ export default function App() {
       { onEvent: apply, signal: controller.signal },
     );
     finish();
-  }, [upload, question, confirmedAxes]);
+  }, [upload, question, confirmedAxes, testCommand, testEnv]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -307,6 +326,13 @@ export default function App() {
                 <RunControls
                   running={store.status === 'running'}
                   disabled={runDisabled}
+                  blockedReason={
+                    !upload
+                      ? 'chưa có mã nguồn — chọn repo mẫu, tải .zip, hoặc trỏ một thư mục'
+                      : needsAxisSelection
+                        ? 'đã có mã nguồn — còn thiếu bước chốt trục (tab “Chọn trục”)'
+                        : undefined
+                  }
                   onRun={run}
                   onStop={stop}
                   answerLength={store.answer.length}
@@ -319,7 +345,17 @@ export default function App() {
                     </Text>
                   </Alert>
                 )}
-                <StepProgress steps={store.steps} />
+                {upload && !upload.target && (
+                  <SuiteSettings
+                    command={testCommand}
+                    env={testEnv}
+                    onCommand={setTestCommand}
+                    onEnv={setTestEnv}
+                    disabled={store.status === 'running'}
+                  />
+                )}
+                <StepProgress steps={store.steps} error={store.error} />
+                <SuiteLog logs={store.logs} running={store.status === 'running'} />
                 <WarningFeed warnings={store.warnings} />
               </Stack>
             </Grid.Col>
@@ -334,15 +370,97 @@ export default function App() {
  * Nút chạy luôn trong tầm mắt ở cột phải, để chạy lại được từ bất kỳ tab nào
  * mà không phải quay về tab hỏi đáp.
  */
+/**
+ * Đọc ô "biến môi trường" dạng `KEY=value`, mỗi dòng một biến.
+ *
+ * Trả `null` khi không có biến hợp lệ nào — người gọi dùng nó để KHÔNG gửi
+ * trường `test_env`, thay vì gửi một object rỗng. Object rỗng và "không khai"
+ * trông giống nhau ở đây nhưng khác nhau ở backend.
+ *
+ * `split` giới hạn 2 phần vì giá trị hay chứa dấu `=` (URL kết nối, token).
+ */
+function parseEnv(raw: string): Record<string, string> | null {
+  const out: Record<string, string> = {};
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const at = trimmed.indexOf('=');
+    if (at <= 0) continue;
+    out[trimmed.slice(0, at).trim()] = trimmed.slice(at + 1).trim();
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * Khai cách chạy bộ kiểm của repo đích — chỉ hiện cho repo THẬT.
+ *
+ * Repo mẫu không cần: chúng cố tình không có dependency nào, và để ô này hiện
+ * ra ở đó chỉ mời người học chỉnh một thứ vốn phải cố định cho bài giảng.
+ */
+function SuiteSettings({
+  command,
+  env,
+  onCommand,
+  onEnv,
+  disabled,
+}: {
+  command: string;
+  env: string;
+  onCommand: (v: string) => void;
+  onEnv: (v: string) => void;
+  disabled: boolean;
+}) {
+  return (
+    <Paper withBorder p="xs" radius="md">
+      <Text size="xs" fw={600} mb={4}>
+        Cách chạy bộ kiểm (tuỳ chọn)
+      </Text>
+      <Text size="xs" c="dimmed" mb={6}>
+        Bỏ trống thì CERTUS tự dò: <Code>uv</Code> nếu repo có lockfile, rồi tới venv sẵn
+        có, cuối cùng là môi trường của CERTUS.
+      </Text>
+      <Stack gap={6}>
+        <TextInput
+          size="xs"
+          label="Lệnh"
+          placeholder="uv run --with coverage python -m coverage run -m pytest -q"
+          value={command}
+          disabled={disabled}
+          onChange={(e) => onCommand(e.currentTarget.value)}
+        />
+        <Textarea
+          size="xs"
+          label="Biến môi trường (mỗi dòng KEY=value)"
+          placeholder="VSF_DATABASE_URL=postgresql://vsf:vsf@localhost:5433/vsf_aio"
+          value={env}
+          disabled={disabled}
+          autosize
+          minRows={2}
+          maxRows={5}
+          onChange={(e) => onEnv(e.currentTarget.value)}
+        />
+      </Stack>
+    </Paper>
+  );
+}
+
 function RunControls({
   running,
   disabled,
+  blockedReason,
   onRun,
   onStop,
   answerLength,
 }: {
   running: boolean;
   disabled: boolean;
+  /**
+   * VÌ SAO nút bị khoá. Trước đây dòng này luôn nói "chưa có mã nguồn", kể cả
+   * khi mã nguồn đã có và thứ còn thiếu là bước chốt trục — người dùng đi tìm
+   * lại một thứ họ vừa làm xong. Một câu chẩn đoán sai còn tệ hơn không có câu
+   * nào: nó gửi người ta đi sai hướng một cách tự tin.
+   */
+  blockedReason?: string;
   onRun: () => void;
   onStop: () => void;
   answerLength: number;
@@ -373,7 +491,7 @@ function RunControls({
         {running
           ? `đang nhận token (${answerLength} ký tự)`
           : disabled
-            ? 'chưa có mã nguồn — hãy chọn một repo mẫu'
+            ? (blockedReason ?? 'chưa chạy được')
             : 'sẵn sàng'}
       </Text>
     </Paper>

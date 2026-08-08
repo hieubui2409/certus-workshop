@@ -37,7 +37,7 @@ export function fetchSamples(signal?: AbortSignal): Promise<SampleRepo[]> {
  * POST vì đầu vào là `{target | upload_id}`, không phải một id trên URL.
  */
 export async function discoverAxes(
-  body: { target?: string; upload_id?: string },
+  body: { target?: string; upload_id?: string; local_path?: string },
   signal?: AbortSignal,
 ): Promise<AxisDiscoveryResponse> {
   const res = await fetch(`${API_BASE}/axes/discover`, {

@@ -31,7 +31,9 @@ import { openChatStream, type ChatEvent } from '@/api/chat';
 
 type Item =
   | { kind: 'user'; text: string }
-  | { kind: 'assistant'; text: string }
+  // `streaming`: bong bóng đang được viết dở (đang nhận message_delta). Sự kiện
+  // `message` cuối chốt nó lại — cùng một bong bóng, không đẻ thêm dòng mới.
+  | { kind: 'assistant'; text: string; streaming?: boolean }
   | { kind: 'tool'; name: string; input: unknown; output: unknown | null }
   | { kind: 'error'; text: string };
 
@@ -77,8 +79,28 @@ export function ChatConversation() {
         }
         return next;
       });
+    } else if (ev.event === 'message_delta') {
+      // Chữ đang chảy: nối vào bong bóng đang viết, hoặc mở một cái mới. Bong bóng
+      // này mang cờ `streaming` để hiện con trỏ nhấp nháy — người dùng phân biệt
+      // được "đang viết" với "đã viết xong", vốn là hai trạng thái khác nhau.
+      setItems((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.kind === 'assistant' && last.streaming) {
+          return [...prev.slice(0, -1), { ...last, text: last.text + String(p.text ?? '') }];
+        }
+        return [...prev, { kind: 'assistant', text: String(p.text ?? ''), streaming: true }];
+      });
     } else if (ev.event === 'message') {
-      setItems((prev) => [...prev, { kind: 'assistant', text: String(p.text ?? '') }]);
+      // Câu ĐẦY ĐỦ từ backend chốt lại bong bóng đang chảy — không tin bản tự ghép
+      // ở client (một gói rơi là lệch chữ mà không ai biết).
+      setItems((prev) => {
+        const last = prev[prev.length - 1];
+        const final = { kind: 'assistant' as const, text: String(p.text ?? ''), streaming: false };
+        if (last && last.kind === 'assistant' && last.streaming) {
+          return [...prev.slice(0, -1), final];
+        }
+        return [...prev, final];
+      });
     } else if (ev.event === 'error') {
       setItems((prev) => [...prev, { kind: 'error', text: String(p.detail ?? 'lỗi không rõ') }]);
     }
@@ -219,6 +241,26 @@ function ConversationItem({ item }: { item: Item }) {
         <Paper withBorder radius="md" p="xs" maw="80%">
           <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
             {item.text}
+            {/* Con trỏ khi đang viết dở: phân biệt "mô hình còn đang gõ" với
+                "nó đã trả lời xong và câu ngắn thế thôi" — hai chuyện khác nhau. */}
+            {item.streaming && (
+              <Box
+                component="span"
+                aria-hidden
+                ml={2}
+                style={{
+                  display: 'inline-block',
+                  width: '0.5em',
+                  borderBottom: '2px solid currentColor',
+                  animation: 'certus-caret 1s steps(2) infinite',
+                }}
+              />
+            )}
+            {/* Keyframe khai tại chỗ: dự án chưa có file CSS toàn cục nào, và một
+                file mới cho đúng một animation là thêm chỗ để quên. */}
+            {item.streaming && (
+              <style>{'@keyframes certus-caret{50%{opacity:0}}'}</style>
+            )}
           </Text>
         </Paper>
       </Group>

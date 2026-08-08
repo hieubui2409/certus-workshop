@@ -17,15 +17,102 @@ import {
   Button,
   Checkbox,
   Group,
+  Loader,
   Paper,
   Stack,
   Text,
   Title,
   Tooltip,
 } from '@mantine/core';
-import { IconAdjustments, IconInfoCircle } from '@tabler/icons-react';
-import { getAxisDiscovery } from '@/api/analyze';
+import { IconAdjustments, IconCheck, IconInfoCircle } from '@tabler/icons-react';
+import { getAxisDiscovery, USE_MOCK } from '@/api/analyze';
+import {
+  EMPTY_AXIS_STREAM,
+  openAxisStream,
+  reduceAxisEvent,
+  type AxisStreamState,
+} from '@/api/axes';
 import type { AxisCandidate, AxisDiscoveryResponse, UploadResult } from '@/types/api';
+
+const STEP_LABEL: Record<string, string> = {
+  scan_repo: 'Quét mã nguồn tìm Enum',
+  propose: 'Đề xuất trục ứng viên',
+  admit_axes: 'Chấm ρ và kết nạp',
+  llm_rationale: 'Mô hình diễn giải từng trục',
+};
+
+/**
+ * Nhật ký sống của lượt khám phá trục.
+ *
+ * Có mặt vì một thanh chờ im lặng không phân biệt được "đang quét 3000 tệp" với
+ * "đã treo". Ba tầng, theo đúng thứ tự công việc thật: bước → trục vừa chấm →
+ * chữ mô hình đang viết.
+ */
+function AxisStreamLog({ state, running }: { state: AxisStreamState; running: boolean }) {
+  return (
+    <Paper withBorder p="xs" radius="sm" bg="var(--mantine-color-gray-0)">
+      <Stack gap={6}>
+        {state.steps.map((s) => (
+          <Group key={s.name} gap="xs" wrap="nowrap">
+            {s.status === 'running' ? <Loader size={12} /> : <IconCheck size={13} color="var(--mantine-color-green-6)" />}
+            <Text size="xs" fw={500}>{STEP_LABEL[s.name] ?? s.name}</Text>
+            <Text size="xs" c="dimmed" style={{ fontFamily: 'var(--mantine-font-family-monospace)' }}>
+              {s.status === 'done' ? summarizeStep(s) : '…'}
+            </Text>
+          </Group>
+        ))}
+
+        {state.candidates.length > 0 && (
+          <Text size="xs" c="dimmed">
+            đã chấm {state.candidates.length} trục
+            {running ? ' — đang chạy' : ''}
+          </Text>
+        )}
+
+        {/* Mô hình bị bỏ qua: nói THẲNG lý do. Im lặng ở đây đọc thành "mô hình
+            không có gì để nói", vốn là một câu khác hẳn. */}
+        {state.llmSkipped && (
+          <Group gap="xs" wrap="nowrap" align="flex-start">
+            <IconInfoCircle size={13} style={{ marginTop: 2, flexShrink: 0 }} />
+            <Text size="xs" c="dimmed">{state.llmSkipped}</Text>
+          </Group>
+        )}
+
+        {state.llmText && (
+          <Stack gap={2}>
+            <Text size="xs" fw={500}>Mô hình đang viết</Text>
+            <Text
+              size="xs"
+              c="dimmed"
+              style={{
+                fontFamily: 'var(--mantine-font-family-monospace)',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                maxHeight: 160,
+                overflowY: 'auto',
+              }}
+            >
+              {state.llmText}
+            </Text>
+          </Stack>
+        )}
+      </Stack>
+    </Paper>
+  );
+}
+
+/** Một dòng tóm tắt cho bước đã xong — con số cụ thể, không phải "OK". */
+function summarizeStep(s: Record<string, unknown>): string {
+  if (s.name === 'scan_repo') return `${s.enums_found} enum`;
+  if (s.name === 'propose') {
+    const by = (s.by_origin ?? {}) as Record<string, number>;
+    const parts = Object.entries(by).map(([k, v]) => `${k}:${v}`);
+    return `${s.candidates} ứng viên${parts.length ? ` (${parts.join(' · ')})` : ''}`;
+  }
+  if (s.name === 'admit_axes') return `giữ ${s.locked}/${s.total} · ${s.engine}`;
+  if (s.name === 'llm_rationale') return `${s.got} trục có diễn giải`;
+  return 'xong';
+}
 
 interface Props {
   upload: UploadResult;
@@ -75,33 +162,76 @@ export function AxisSelectionPanel({ upload, onConfirm, confirmed }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [stream, setStream] = useState<AxisStreamState>(EMPTY_AXIS_STREAM);
 
-  const body = upload.target ? { target: upload.target } : { upload_id: upload.upload_id ?? upload.run_id };
+  const body = upload.target
+    ? { target: upload.target }
+    : upload.local_path
+      ? { local_path: upload.local_path }
+      : { upload_id: upload.upload_id ?? upload.run_id };
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
     setError(null);
-    getAxisDiscovery(body)
-      .then((res) => {
-        if (!alive) return;
-        setData(res);
-        if (res) {
-          // Khởi tạo tick theo phán quyết engine (kept), hoặc theo confirmed nếu đã có.
-          const init: Record<string, boolean> = {};
-          for (const c of res.candidates) {
-            init[c.axis] = confirmed ? c.axis in confirmed : c.kept;
-          }
-          setChecked(init);
-        }
+    setStream(EMPTY_AXIS_STREAM);
+
+    if (USE_MOCK) {
+      // Mock frontend: không có backend nào để stream. Giữ nguyên đường cũ
+      // (trả null ⇒ panel tự ẩn) thay vì mở một dòng SSE không bao giờ có dữ liệu.
+      getAxisDiscovery(body)
+        .then((res) => alive && setData(res))
+        .catch((e) => alive && setError(e instanceof Error ? e.message : String(e)))
+        .finally(() => alive && setLoading(false));
+      return () => {
+        alive = false;
+      };
+    }
+
+    const ctrl = new AbortController();
+    let acc = EMPTY_AXIS_STREAM;
+    openAxisStream(
+      {
+        target: upload.target,
+        uploadId: upload.local_path ? undefined : (upload.upload_id ?? upload.run_id),
+        localPath: upload.local_path,
+      },
+      {
+        signal: ctrl.signal,
+        onEvent: (ev) => {
+          if (!alive) return;
+          acc = reduceAxisEvent(acc, ev);
+          setStream(acc);
+          if (ev.event === 'done') setData(acc.result);
+          if (ev.event === 'error') setError(acc.error);
+        },
+      },
+    )
+      .catch((e) => {
+        // Huỷ do đổi repo/unmount không phải lỗi để báo lên người dùng.
+        if (!alive || ctrl.signal.aborted) return;
+        setError(e instanceof Error ? e.message : String(e));
       })
-      .catch((e) => alive && setError(e instanceof Error ? e.message : String(e)))
       .finally(() => alive && setLoading(false));
+
     return () => {
       alive = false;
+      ctrl.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [upload.target, upload.upload_id, upload.run_id]);
+  }, [upload.target, upload.upload_id, upload.run_id, upload.local_path]);
+
+  // Tick khởi tạo tách khỏi vòng nạp: chỉ chạy khi ĐÃ có kết quả cuối, nếu không
+  // mỗi sự kiện `axis` sẽ ghi đè lựa chọn người dùng vừa tick giữa chừng.
+  useEffect(() => {
+    if (!data) return;
+    const init: Record<string, boolean> = {};
+    for (const c of data.candidates) {
+      init[c.axis] = confirmed ? c.axis in confirmed : c.kept;
+    }
+    setChecked(init);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
 
   const apply = useCallback(() => {
     if (!data) return;
@@ -133,7 +263,11 @@ export function AxisSelectionPanel({ upload, onConfirm, confirmed }: Props) {
           )}
         </Group>
 
-        {loading && <Text size="sm" c="dimmed">Đang chấm trục theo mật độ rủi ro…</Text>}
+        {/* Nhật ký sống: hiện KHI ĐANG chạy, và ở lại nếu mô hình có nói gì —
+            người dùng phải xem lại được cái đã chảy qua, không chỉ liếc một lần. */}
+        {(loading || stream.llmText || stream.llmSkipped) && (
+          <AxisStreamLog state={stream} running={loading} />
+        )}
         {error && (
           <Alert color="red" variant="light" title="Không lấy được đề xuất trục">
             {error}

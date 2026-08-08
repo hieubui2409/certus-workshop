@@ -12,8 +12,8 @@
  * "chưa chạy". Bảng này giờ phản chiếu đúng 9 stage thật sự chạy.
  */
 
-import { Badge, Group, Paper, Stack, Text } from '@mantine/core';
-import type { StepPayload } from '@/types/sse';
+import { Alert, Badge, Code, Group, Paper, Stack, Text } from '@mantine/core';
+import type { ErrorPayload, StepPayload } from '@/types/sse';
 
 /** Khớp 1-1 với STAGES của backend — thứ tự là hợp đồng. */
 const STEP_NAMES: Record<number, string> = {
@@ -32,12 +32,26 @@ const STEP_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 interface Props {
   steps: StepPayload[];
+  /** Lỗi có cấu trúc backend đã phát. Nó DỪNG pipeline, nên bảng phải nói ra. */
+  error?: ErrorPayload | null;
 }
 
-export function StepProgress({ steps }: Props) {
+export function StepProgress({ steps, error }: Props) {
   /** Trạng thái CUỐI CÙNG của mỗi bước; danh sách event gốc không bị sửa. */
   const latest = new Map<number, StepPayload>();
   for (const s of steps) latest.set(s.step, s);
+
+  // Hai cách viết cùng một trạng thái: backend thật phát `done` (mặc định của
+  // `_step`), mock phát `ok`. Nhận cả hai, không thì một lượt chạy trên backend
+  // thật hiện xám toàn bộ trong khi mọi bước đã xong.
+  const isDone = (st: string | undefined) => st === 'ok' || st === 'done';
+
+  // Bước đầu tiên chưa xong khi lỗi nổ = bước đã CHẾT. Không có phép quy này
+  // thì backend nói "bộ kiểm không chạy được" mà bảng vẫn hiện bước 4 "chưa
+  // chạy" và bước 5–9 y hệt — người đọc kết luận hệ thống treo, trong khi nó
+  // đã dừng có lý do và đã nói ra lý do. Im lặng ở đây tệ hơn cả báo sai: nó
+  // biến một lỗi môi trường đọc được thành một sự cố không tên.
+  const failedAt = error ? STEP_ORDER.find((n) => !isDone(latest.get(n)?.status)) : undefined;
 
   return (
     <Paper withBorder p="sm" radius="md">
@@ -47,9 +61,11 @@ export function StepProgress({ steps }: Props) {
       <Stack gap={4}>
         {STEP_ORDER.map((n) => {
           const step = latest.get(n);
-          const status = step?.status ?? 'chưa chạy';
+          let status = step?.status ?? 'chưa chạy';
+          if (error && n === failedAt) status = 'failed';
+          else if (error && failedAt !== undefined && n > failedAt) status = 'skipped';
           const color =
-            status === 'ok'
+            isDone(status)
               ? 'green'
               : status === 'running'
                 ? 'blue'
@@ -66,13 +82,23 @@ export function StepProgress({ steps }: Props) {
               <Text size="xs" style={{ flex: 1 }} c={step ? undefined : 'dimmed'}>
                 {STEP_NAMES[n]}
               </Text>
-              <Badge size="xs" color={color} variant={status === 'ok' ? 'light' : 'filled'}>
+              <Badge size="xs" color={color} variant={isDone(status) ? 'light' : 'filled'}>
                 {status}
               </Badge>
             </Group>
           );
         })}
       </Stack>
+      {error && (
+        // Câu backend viết ra được in NGUYÊN VĂN, không tóm tắt: nó đã nêu môi
+        // trường đã dùng, lệnh đã chạy và đuôi log. Tóm tắt lại ở đây là ném đi
+        // đúng phần giúp người dùng sửa được.
+        <Alert color="red" variant="light" mt="sm" p="xs" title={error.code}>
+          <Code block style={{ whiteSpace: 'pre-wrap', fontSize: 11 }}>
+            {error.msg}
+          </Code>
+        </Alert>
+      )}
     </Paper>
   );
 }

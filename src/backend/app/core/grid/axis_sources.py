@@ -25,7 +25,7 @@ import ast
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 
-from app.core.grid.axis_admit import AxisCandidate
+from app.core.grid.axis_admit import AxisCandidate, is_vendor_path
 
 __all__ = ["propose_candidates"]
 
@@ -36,6 +36,10 @@ _MIN_NAME_LEN = 2
 
 def _iter_py(root: Path) -> Iterator[tuple[Path, ast.AST]]:
     for py in sorted(root.rglob("*.py")):
+        # Vendor (.venv/site-packages/node_modules…) không phải mã của repo đang
+        # chấm — cùng ranh giới `discover_axes` dùng, xem pipeline.is_vendor_path.
+        if is_vendor_path(py, root):
+            continue
         if "test" in py.parts or py.name.startswith("test_"):
             continue
         try:

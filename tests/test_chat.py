@@ -91,11 +91,16 @@ def test_chat_single_turn_emits_tool_then_message(tmp_path):
     events = asyncio.run(_collect(session, "Độ phủ tới đâu?"))
 
     kinds = [e.kind for e in events]
-    assert kinds == ["tool_use", "tool_result", "message", "done"]
-    assert events[0].payload["name"] == "echo"
-    assert events[1].payload["output"] == {"echoed": {"x": 7}, "ok": True}
-    assert events[2].payload["text"] == "Line 94%."
-    assert events[3].payload["tool_calls"] == 1
+    assert [k for k in kinds if k != "message_delta"] == [
+        "tool_use", "tool_result", "message", "done"
+    ]
+    # Neo theo KIND, không theo chỉ số: `message_delta` chen vào giữa nên vị trí
+    # tuyệt đối đã hết ý nghĩa, còn "sự kiện tool_use nói gì" thì không đổi.
+    by = {e.kind: e for e in events}
+    assert by["tool_use"].payload["name"] == "echo"
+    assert by["tool_result"].payload["output"] == {"echoed": {"x": 7}, "ok": True}
+    assert by["message"].payload["text"] == "Line 94%."
+    assert by["done"].payload["tool_calls"] == 1
     # Lịch sử thu gọn: đúng 2 dòng (user + assistant final), KHÔNG có tool turn.
     assert store.history("th-1") == [
         {"role": "user", "content": "Độ phủ tới đâu?"},
@@ -124,7 +129,7 @@ def test_chat_second_turn_sees_history_deterministically(tmp_path):
                           store=store, client=LLMClient(_settings(tmp_path)))
     events = asyncio.run(_collect(session, "Còn phần nào chưa kiểm chứng?"))
 
-    assert [e.kind for e in events] == ["message", "done"]
+    assert [e.kind for e in events if e.kind != "message_delta"] == ["message", "done"]
     assert "14/17" in events[0].payload["text"]
     assert len(store.history("th-2")) == 4
 

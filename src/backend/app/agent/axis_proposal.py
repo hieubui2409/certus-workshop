@@ -37,15 +37,25 @@ async def propose_axes(
     *,
     client: LLMClient | None = None,
     settings: Settings | None = None,
+    prefetched_text: str | None = None,
 ) -> dict[str, dict[str, Any]] | None:
     """Trả `{axis: {"keep": bool, "rationale": str}}`, hoặc None nếu không có đề xuất.
 
     None là một câu trả lời hợp lệ: chế độ mô phỏng chưa thu cassette cho tập trục
     này, hoặc mô hình trả JSON hỏng. Người gọi diễn giải None thành proposal_source
     = "none" và vẫn cho người dùng tự chọn.
+
+    `prefetched_text`: câu trả lời NGUYÊN VĂN mà người gọi đã stream được (đường
+    SSE phát từng mẩu chữ cho người xem). Truyền vào thì hàm này chỉ PARSE, không
+    gọi mô hình lần nữa — nếu không thì một lượt hiển thị phải trả giá bằng hai
+    lượt gọi API, và tệ hơn: hai lượt có thể trả hai câu khác nhau, nên cái người
+    dùng ĐỌC không còn là cái hệ thống DÙNG.
     """
     if not candidates:
         return None
+    if prefetched_text is not None:
+        raw = prefetched_text.strip()
+        return _parse_verdicts(raw, candidates) if raw else None
     cfg = settings or default_settings
     cli = client or LLMClient(cfg)
     prompt = render_prompt("axis_proposal", CANDIDATES=format_candidates(candidates))
@@ -63,6 +73,18 @@ async def propose_axes(
     raw = (resp.text or "").strip()
     if not raw:
         return None
+    return _parse_verdicts(raw, candidates)
+
+
+def _parse_verdicts(
+    raw: str, candidates: Sequence[Mapping[str, Any]]
+) -> dict[str, dict[str, Any]] | None:
+    """Đọc câu trả lời thô thành verdict theo trục. JSON hỏng ⇒ None, không ném.
+
+    Chỗ ở DUY NHẤT của luật parse, dùng chung cho cả đường gọi-rồi-đọc lẫn đường
+    stream-rồi-đọc: hai bản parse song song sẽ trôi khỏi nhau, và lúc đó cái người
+    dùng thấy trên stream khác cái hệ thống ghi lại.
+    """
     # Model mạnh (Opus) không nhận prefill `{` nên trả JSON bọc trong ```json…```
     # thay vì mở object trần. `extract_claims_json` đã biết moi cả hai dạng (fence
     # hoặc object đầu tiên) — dùng lại thay vì json.loads trần vốn vỡ vì một backtick.
