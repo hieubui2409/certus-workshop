@@ -6,12 +6,13 @@ ngoài kiểm soát**, kể cả khi nó trông như mã nguồn của một d�
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 import zipfile
 
 from fastapi import APIRouter, Depends, File, UploadFile
 
-from app.api.schemas import UploadAck
+from app.api.schemas import AcceptedFile, UploadAck
 from app.api.deps import needs
 from app.contracts.errors import CertusError
 from app.policy.data_policy import load_policy
@@ -68,7 +69,9 @@ async def upload(
 
     policy = load_policy()
     total_budget = settings.upload_max_total_bytes
-    accepted, rejected, total = 0, {}, 0
+    accepted: list[AcceptedFile] = []
+    rejected: dict[str, str] = {}
+    total = 0
     with zipfile.ZipFile(raw) as zf:
         names = zf.namelist()
         if len(names) > MAX_FILES:
@@ -114,12 +117,23 @@ async def upload(
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
             total += len(data)
-            accepted += 1
+            # Băm BYTE THẬT vừa ghi ra đĩa, không băm gì khai trong header:
+            # đây là neo duy nhất cho phép người dùng đối chiếu thứ CERTUS
+            # nhận với thứ họ nén. Băm cái đã khai thì chỉ chứng minh header
+            # tự nhất quán với chính nó.
+            accepted.append(
+                AcceptedFile(
+                    path=name,
+                    bytes=len(data),
+                    sha256=hashlib.sha256(data).hexdigest(),
+                )
+            )
     raw.unlink(missing_ok=True)
 
     return UploadAck(
         upload_id=upload_id,
-        files_accepted=accepted,
+        accepted=accepted,
+        files_accepted=len(accepted),
         files_rejected=len(rejected),
         rejected_reasons=rejected,
         bytes_total=total,

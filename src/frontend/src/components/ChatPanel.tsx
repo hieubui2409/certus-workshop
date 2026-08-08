@@ -9,6 +9,7 @@
 import { Badge, Box, Button, Group, Paper, ScrollArea, Stack, Text, Textarea, Title } from '@mantine/core';
 import { IconPlayerPlay, IconPlayerStop } from '@tabler/icons-react';
 import type { RunStatus } from '@/store/analysisStore';
+import { StreamingBubble, StreamingCaret } from './StreamingIndicator';
 
 interface Props {
   question: string;
@@ -165,31 +166,24 @@ export function ChatPanel({
           đang chờ. */}
       <Paper withBorder p="md" radius="md" mih={180}>
         {shown.length === 0 ? (
-          <Text size="sm" c="dimmed">
-            {running ? 'Đang chờ token đầu tiên…' : 'Câu trả lời sẽ hiện dần ở đây.'}
-          </Text>
+          running ? (
+            // Chờ token đầu tiên là quãng LÂU NHẤT của cả lượt (pipeline chạy hết
+            // 8 bước rồi mô hình mới viết chữ đầu). Một câu chữ tĩnh ở đây đọc y
+            // như đã treo — chỉ báo phải nhúc nhích và phải đếm giây.
+            <StreamingBubble label="đang chờ mẩu chữ đầu tiên từ mô hình" />
+          ) : (
+            <Text size="sm" c="dimmed">
+              Câu trả lời sẽ hiện dần ở đây.
+            </Text>
+          )
         ) : (
           <ScrollArea.Autosize mah={340} type="auto">
             <Box style={{ whiteSpace: 'pre-wrap' }}>
               <Text size="sm">
                 {shown}
-                {/* Con trỏ nháy: dấu hiệu "còn đang viết", cùng animation với
-                    khung chat. Keyframe khai tại chỗ vì dự án chưa có CSS toàn cục. */}
-                {running && (
-                  <>
-                    <Box
-                      component="span"
-                      ml={2}
-                      style={{
-                        display: 'inline-block',
-                        width: '0.5em',
-                        borderBottom: '2px solid currentColor',
-                        animation: 'certus-caret 1s steps(2) infinite',
-                      }}
-                    />
-                    <style>{'@keyframes certus-caret{50%{opacity:0}}'}</style>
-                  </>
-                )}
+                {/* Con trỏ nháy: dấu hiệu "còn đang viết", dùng chung component
+                    với khung chat để hai chỗ không nháy hai nhịp khác nhau. */}
+                {running && <StreamingCaret />}
               </Text>
             </Box>
           </ScrollArea.Autosize>

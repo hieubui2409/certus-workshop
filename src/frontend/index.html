@@ -3,6 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Favicon inline (data: URI) chứ không phải một tệp trong `public/`: trình
+      duyệt LUÔN xin `/favicon.ico`, và không có nó thì mọi phiên mở DevTools
+      đều mở đầu bằng một dòng đỏ `404 (Not Found)`. Dòng đỏ đó vô hại, nhưng
+      nó dạy sai — lớp học đang tập nhìn console để phân biệt lỗi thật với
+      nhiễu, mà bài đầu tiên họ thấy lại là nhiễu do chính ta để lại.
+    -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231c7ed6'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='bold' fill='white' text-anchor='middle'%3EC%3C/text%3E%3C/svg%3E"
+    />
     <title>CERTUS — chúng tôi không đoán</title>
   </head>
   <body>

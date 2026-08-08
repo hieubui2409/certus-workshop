@@ -28,6 +28,7 @@ import {
 } from '@mantine/core';
 import { IconSend, IconTool } from '@tabler/icons-react';
 import { openChatStream, type ChatEvent } from '@/api/chat';
+import { StreamingBubble, StreamingCaret } from './StreamingIndicator';
 
 type Item =
   | { kind: 'user'; text: string }
@@ -155,10 +156,11 @@ export function ChatConversation() {
               {items.map((it, i) => (
                 <ConversationItem key={i} item={it} />
               ))}
-              {busy && (
-                <Text size="xs" c="dimmed">
-                  …
-                </Text>
+              {/* Chỉ hiện khi CHƯA có bong bóng nào đang chảy chữ: lúc mô hình
+                  đã bắt đầu viết thì con trỏ nháy trong chính bong bóng đó đã
+                  nói "còn đang gõ", thêm một chỉ báo nữa là nói hai lần. */}
+              {busy && !items.some((it) => it.kind === 'assistant' && it.streaming) && (
+                <StreamingBubble />
               )}
             </Stack>
           </ScrollArea>
@@ -243,24 +245,7 @@ function ConversationItem({ item }: { item: Item }) {
             {item.text}
             {/* Con trỏ khi đang viết dở: phân biệt "mô hình còn đang gõ" với
                 "nó đã trả lời xong và câu ngắn thế thôi" — hai chuyện khác nhau. */}
-            {item.streaming && (
-              <Box
-                component="span"
-                aria-hidden
-                ml={2}
-                style={{
-                  display: 'inline-block',
-                  width: '0.5em',
-                  borderBottom: '2px solid currentColor',
-                  animation: 'certus-caret 1s steps(2) infinite',
-                }}
-              />
-            )}
-            {/* Keyframe khai tại chỗ: dự án chưa có file CSS toàn cục nào, và một
-                file mới cho đúng một animation là thêm chỗ để quên. */}
-            {item.streaming && (
-              <style>{'@keyframes certus-caret{50%{opacity:0}}'}</style>
-            )}
+            {item.streaming && <StreamingCaret />}
           </Text>
         </Paper>
       </Group>

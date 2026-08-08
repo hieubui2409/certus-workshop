@@ -42,7 +42,14 @@ from app.api.schemas import (
     ZoneOut,
 )
 from app.contracts.errors import CassetteMissError, CertusError, ConfigError
-from app.contracts.types import Band, Cell, Claim, Interval
+from app.contracts.types import Band, Cell, Claim, GateVerdict, Interval
+from app.gates.registry import (
+    GATE_ORDER,
+    GateContext,
+    load_gates_config,
+    run_gate,
+    wilson_lower_bound,
+)
 from app.core.grid.axis_admit import is_vendor_path
 from app.core.grid.cells import cell_id as make_cell_id
 from app.core.grid.cells import enumerate_t_wise
@@ -79,6 +86,41 @@ class SuiteRunFailed(CertusError):
     cái này nghĩa là pytest chưa từng chạy tới phần thân. Fail-closed ở đây để
     pipeline không phát ra một bảng grid trông như đã đo.
     """
+
+
+@dataclass(frozen=True)
+class _GridVerdictForGate:
+    """Tạo tác mà cổng `grid` đọc, dựng từ kết quả CÓ THẬT của lượt chạy này.
+
+    Khai bằng dataclass riêng thay vì nhét thêm trường vào `CoverageOut`: cổng
+    `grid` khai hợp đồng của nó bằng Protocol (`GridReviewVerdictLike`), và một
+    lớp chuyển đổi rõ ràng ở đây giữ cho hai bên đổi độc lập được. Mọi trường
+    dưới đây đều đến từ số đã tính, không có cái nào bịa — đặc biệt là
+    `blocking_zones`: cổng CHẶN khi tập này rỗng, nên bơm vào một danh sách
+    không rỗng cho "đẹp" là tự tay tắt đúng cái luật cần chạy.
+    """
+
+    risk_band: str
+    cells_total: int
+    cells_scored: int
+    blocking_zones: Sequence[str]
+    min_per_zone: Mapping[str, float]
+    source_file: str
+    source_line: int
+
+
+def _worst_band_name(cells: Sequence[Cell]) -> str:
+    """Band TỆ NHẤT trong lưới — không phải band trung bình.
+
+    Trung bình cho phép một vùng an toàn che một vùng nguy hiểm ở chỗ khác, đúng
+    thứ `CoverageTriptych` từ chối làm. `unknown` xếp tệ nhất: nó nằm TRONG mẫu
+    số và chấm 0, khác hẳn `N/A` (ngoài mẫu số).
+    """
+    order = [Band.UNKNOWN, Band.STUB, Band.LOW, Band.MED, Band.HIGH]
+    present = [c.band for c in cells if c.band is not Band.NA]
+    if not present:
+        return Band.UNKNOWN.value
+    return min(present, key=lambda b: order.index(b) if b in order else 0).value
 
 
 # --------------------------------------------------------------------------
@@ -702,9 +744,37 @@ class Pipeline:
             observations=obs_table,
             mutation=mutation_artifact,
         )
-        for c in cells[:200]:
+        # Trần phát ô — có thật, vì một lưới 6 trục sinh hàng nghìn ô và đổ hết
+        # qua SSE thì trình duyệt đứng hình. Nhưng một trần IM LẶNG là chỗ mẫu
+        # số co lại mà không ai biết: đo trên document-intake với 6 trục, lưới
+        # thật có 421 ô còn UI in "Ô được liệt kê 200" — vì UI đếm số event
+        # `cell` nó nhận được, trong khi `coverage.grid` vẫn chia cho 421. Hai
+        # con số trên cùng một màn hình nói hai mẫu số khác nhau.
+        #
+        # Nên trần vẫn còn, nhưng nó phải TỰ KHAI: `cells_emitted` cho biết đã
+        # phát bao nhiêu, `cells` cho biết lưới thật to bao nhiêu, và khi hai
+        # cái lệch thì đi kèm một cảnh báo đọc được.
+        CELL_EMIT_CAP = 400
+        for c in cells[:CELL_EMIT_CAP]:
             yield self._event("cell", trace_id, cell=c.model_dump(mode="json"))
-        yield self._step(trace_id, "project_grid", cells=len(cells))
+        if len(cells) > CELL_EMIT_CAP:
+            yield self._event(
+                "warning",
+                trace_id,
+                code="cells-truncated",
+                msg=(
+                    f"lưới có {len(cells)} ô nhưng chỉ {CELL_EMIT_CAP} ô đầu được "
+                    f"gửi lên giao diện (trần hiển thị). Mẫu số THẬT của "
+                    f"`grid_coverage` vẫn là {len(cells)} ô — đọc con số ở tab "
+                    "'Ba tầng mẫu số', đừng đếm ô trên bản đồ nhiệt."
+                ),
+            )
+        yield self._step(
+            trace_id,
+            "project_grid",
+            cells=len(cells),
+            cells_emitted=min(len(cells), CELL_EMIT_CAP),
+        )
 
         band_scores = load_band_scores()
         rw = risk_weighted_coverage(cells, band_scores)
@@ -760,6 +830,61 @@ class Pipeline:
                 blocking=per_zone[zid]["w"] >= blocking_w, **v,
             )
         blocked = bool(blocking_failures)
+
+        # ── chuỗi 5 cổng — requirements · design · grid · execution · outcome ──
+        # Đây là thứ tab "Chuỗi cổng" của UI vẽ. Trước bản này pipeline không gọi
+        # nó, nên tab đó RỖNG kể cả sau một lượt chạy 9/9 — một panel trống đọc
+        # y hệt một panel hỏng, và cái nó đang giấu chính là bài học chính của nó.
+        #
+        # Gọi TỪNG cổng bằng `run_gate`, KHÔNG dùng `run_chain`. `run_chain` dừng
+        # ở cổng `fail` đầu tiên, đúng cho một lượt review SDLC (gate 2 chỉ có
+        # nghĩa khi gate 1 đã qua). Một lượt analyze repo thì khác: nó không có
+        # tiêu chí nghiệm thu, không có PR diff, không có quan sát sau ship — nên
+        # `run_chain` sẽ chặn ngay ở cổng 1 và cổng `grid` (cổng DUY NHẤT có dữ
+        # liệu thật ở đây) không bao giờ chạy. Chạy rời từng cổng cho ra bức tranh
+        # thật: một cổng chấm được, bốn cổng từ chối vì THIẾU TẠO TÁC.
+        #
+        # Bốn cổng đỏ đó KHÔNG phải hỏng — chúng là bài học. `refuse()` đặt
+        # `denominator=0`, và UI có luật cứng "mẫu số 0 ⇒ ĐỎ bất kể verdict":
+        # "chưa soi cái nào" phải trông khác "đã soi và sạch". Một lượt analyze
+        # chỉ trả lời được câu hỏi của cổng `grid`; nói thẳng ra bốn câu còn lại
+        # chưa ai trả lời thì trung thực hơn là giấu cả năm.
+        gate_verdicts: list[GateVerdict] = []
+        try:
+            gate_cfg = load_gates_config()
+            gate_ctx = GateContext(
+                config=gate_cfg,
+                wilson_lower=wilson_lower_bound,
+                # Chỉ cổng `grid` có tạo tác thật từ lượt chạy này. Bốn cái còn
+                # lại để `None` một cách CÓ Ý — bịa ra một tạo tác rỗng để cổng
+                # "pass" là đúng thứ chuỗi cổng sinh ra để chặn.
+                grid_verdict=_GridVerdictForGate(
+                    risk_band=_worst_band_name(cells),
+                    cells_total=len(cells),
+                    cells_scored=scoreable,
+                    blocking_zones=[
+                        zid for zid, z in per_zone.items() if z["w"] >= blocking_w
+                    ],
+                    min_per_zone={
+                        zid: float(v.get("worst_score", 0.0))
+                        for zid, v in floor_verdicts.items()
+                    },
+                    source_file=str(self.cfg.config_dir / "zones.yaml"),
+                    source_line=1,
+                ),
+            )
+            for gate_name in GATE_ORDER:
+                gate_verdicts.append(run_gate(gate_name, gate_ctx))
+        except (CertusError, ConfigError) as exc:
+            # Cấu hình cổng hỏng KHÔNG được làm chết lượt phân tích: mọi con số
+            # phía trên đã tính xong và vẫn đúng. Nói ra rồi đi tiếp.
+            yield self._event(
+                "warning", trace_id, code="gate-chain",
+                msg=f"không chạy được chuỗi 5 cổng: {exc}",
+            )
+        for gv in gate_verdicts:
+            yield self._event("gate", trace_id, **gv.model_dump(mode="json"))
+
         # Bước 8 khai đúng thứ nó đo được: cổng có chặn không. `verdict` cuối cùng
         # còn phụ thuộc "có claim nào ra không" — đó là kết quả của bước 9, không
         # phải của cổng, nên nó thuộc về `response` chứ không thuộc payload này.
@@ -768,6 +893,8 @@ class Pipeline:
             zones=len(floor_verdicts),
             blocking_failures=len(blocking_failures),
             blocked=blocked,
+            chain_gates=len(gate_verdicts),
+            chain_refused=sum(1 for g in gate_verdicts if g.denominator == 0),
         )
 
         # ── giai đoạn DIỄN GIẢI: mô hình ĐỌC số, code đã TÍNH xong ──────────
@@ -882,6 +1009,29 @@ class Pipeline:
         except (ClaimParseError, ConfigError) as exc:
             span.finish(status="error", error=type(exc).__name__)
             llm_warnings.append(f"không đọc được câu trả lời của mô hình: {exc}")
+        except ValidationError as exc:
+            # `parse_claims` dựng claim từ JSON do MÔ HÌNH viết. Ở cây gốc nó đi
+            # đường `model_construct` (bỏ validator) nên kiểu sai lọt qua; sau khi
+            # vá bài 06 nó dựng bằng constructor thật, và một câu trả lời dị dạng
+            # ném ValidationError NGAY TRONG lời gọi — tức ngoài vòng try nhỏ bên
+            # dưới, nên nó thoát ra và giết cả lượt phân tích.
+            #
+            # Đo được với model thật: `flags` trả về list-of-dict thay vì
+            # list-of-str → `1 validation error for Claim / flags.0` → toàn bộ
+            # lượt chạy chết, mất luôn mọi con số pipeline đã tính xong ở 8 bước
+            # trước. Ca đó nay `_normalize_flags` nắn lại ngay trong parse; nhánh
+            # này ở lại làm lưới cho những dị dạng CHƯA gặp (claim tỉ lệ OBSERVED
+            # thiếu interval, `anchors` sai khuôn…). Một câu trả lời hỏng của mô
+            # hình KHÔNG được phép xoá một phép đo đã có: nói ra rồi đi tiếp,
+            # đúng như ba nhánh except kia.
+            span.finish(status="error", error="ValidationError")
+            detail = exc.errors()[0].get("msg", "") if exc.errors() else str(exc)
+            loc = ".".join(str(x) for x in (exc.errors()[0].get("loc") or ())) if exc.errors() else ""
+            llm_warnings.append(
+                "mô hình trả claim sai kiểu, bỏ toàn bộ phần diễn giải"
+                + (f" ({loc}: {detail})" if loc or detail else "")
+                + " — mọi con số phía trên vẫn do pipeline tính độc lập và vẫn đúng."
+            )
         tracing.emit(span)
         yield self._event("span", trace_id, span=span.to_row().to_sse())
         for c in claims:
@@ -1040,6 +1190,44 @@ def run_target_suite(
             "bộ kiểm.\n"
             f"Môi trường: {outcome.plan.kind} — {outcome.plan.reason}\n"
             f"Lệnh: {' '.join(outcome.plan.argv)}\n"
+            f"Đuôi log:\n{outcome.output_tail}"
+        )
+    # Exit code của pytest nói RẤT rõ chuyện gì đã xảy ra, và ba giá trị dưới đây
+    # nghĩa là bộ kiểm CHƯA TỪNG CHẠY — không phải "chạy rồi và đỏ":
+    #
+    #   2 = bị ngắt giữa chừng   3 = lỗi nội bộ
+    #   4 = sai cách gọi (usage) 5 = không gom được test nào
+    #
+    # Chỉ exit 1 là "đã chạy, có test đỏ" — một quan sát HỢP LỆ (`known_failure`).
+    #
+    # Vì sao điều kiện cũ (`exit != 0 và không thu được gì`) không đủ: nó tin rằng
+    # suite không chạy thì `.coverage` sẽ rỗng. Sai. Đo thật trên
+    # `vsf/document-intake`: `conftest.py` có guard chặn chạy nhầm DB production và
+    # gọi `sys.exit` ngay khi nạp. pytest trả exit 4, KHÔNG một test nào chạy —
+    # nhưng `coverage` đã kịp ghi 7 tệp (`conftest.py` và các `__init__.py` nạp
+    # trước lúc thoát). `covered` không rỗng nên nhánh chặn không cắn, và CERTUS
+    # in ra `line_coverage 93/100 = 93.0%`.
+    #
+    # 93% dựng trên một bộ kiểm chưa từng chạy là lỗi tệ nhất mà công cụ này có
+    # thể mắc: nó không sai một chút, nó sai theo hướng làm người đọc yên tâm.
+    # Đúng cái CERTUS tồn tại để chống. Nên chặn theo Ý NGHĨA của exit code, chứ
+    # không theo việc có nhặt được byte nào hay không.
+    SUITE_NEVER_RAN = {2: "bị ngắt giữa chừng", 3: "lỗi nội bộ của pytest",
+                       4: "sai cách gọi pytest (usage error)",
+                       5: "không gom được test nào"}
+    if outcome.exit_code in SUITE_NEVER_RAN:
+        raise SuiteRunFailed(
+            f"bộ kiểm của repo đích chưa từng chạy: pytest thoát với exit="
+            f"{outcome.exit_code} ({SUITE_NEVER_RAN[outcome.exit_code]}). Chỉ exit=1 "
+            "mới nghĩa là 'đã chạy và có test đỏ'.\n"
+            f"Đã nhặt được {len(covered)} ký hiệu từ `.coverage`, nhưng đó là phần "
+            "Python nạp TRƯỚC khi bộ kiểm dừng — không phải một phép đo. Báo một tỉ "
+            "lệ ở đây là biến 'tôi không đo được' thành 'tôi đã đo và kết quả tốt'.\n"
+            f"Môi trường đã dùng: {outcome.plan.kind} — {outcome.plan.reason}\n"
+            f"Lệnh: {' '.join(outcome.plan.argv)}\n"
+            "Sửa được không: đọc đuôi log dưới đây. Repo đòi một biến môi trường "
+            "hoặc một dịch vụ nào đó thì khai ở ô 'lệnh chạy bộ kiểm' / 'biến môi "
+            "trường' rồi chạy lại.\n"
             f"Đuôi log:\n{outcome.output_tail}"
         )
     if outcome.exit_code != 0 and not covered:

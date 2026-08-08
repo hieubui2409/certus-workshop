@@ -28,6 +28,12 @@ export interface StepPayload {
    * backend thật hiện xám toàn bộ trong khi mọi bước đã chạy xong.
    */
   status: 'running' | 'ok' | 'done' | 'failed' | 'skipped';
+  /**
+   * Trường phụ theo từng bước (`project_grid` gửi `cells` + `cells_emitted`,
+   * `run_gates` gửi `chain_gates`…). Khai lỏng có chủ đích: một bước mới thêm
+   * một trường không được làm vỡ bảng tiến trình.
+   */
+  [extra: string]: unknown;
 }
 
 export interface LogPayload {

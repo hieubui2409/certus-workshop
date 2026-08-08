@@ -141,10 +141,27 @@ export default function App() {
       ...(confirmedAxes ? { confirmed_axes: confirmedAxes } : {}),
     };
 
-    await openAnalyzeStream(
-      req,
-      { onEvent: apply, signal: controller.signal },
-    );
+    try {
+      await openAnalyzeStream(req, { onEvent: apply, signal: controller.signal });
+    } catch (err) {
+      // Bấm "Dừng" abort controller, và `reader.read()` đang chờ sẽ REJECT —
+      // không bắt ở đây thì lời hứa nổ ra ngoài thành unhandled rejection
+      // (`BodyStreamBuffer was aborted` trong console). Dừng là việc người dùng
+      // CHỦ ĐỘNG làm, nên nó không phải một sự cố: nuốt đúng ca abort, còn mọi
+      // lỗi khác vẫn phải hiện thành một dòng chữ đọc được.
+      const aborted =
+        controller.signal.aborted ||
+        (err instanceof DOMException && err.name === 'AbortError');
+      if (!aborted) {
+        apply({
+          event: 'error',
+          data: {
+            code: 'stream-broken',
+            msg: `dòng sự kiện đứt giữa chừng: ${err instanceof Error ? err.message : String(err)}`,
+          },
+        });
+      }
+    }
     finish();
   }, [upload, question, confirmedAxes, testCommand, testEnv]);
 
@@ -158,6 +175,16 @@ export default function App() {
   // vào lỗi. Repo mẫu (`target`) miễn: trục đã cố định, panel chỉ để xem.
   const needsAxisSelection = Boolean(upload) && !upload?.target && !confirmedAxes;
   const runDisabled = !upload || needsAxisSelection;
+
+  // Số ô THẬT của lưới, đọc từ bước `project_grid` — KHÔNG phải `store.cells.length`.
+  // Backend chặn trần số event `cell` gửi lên (lưới 6 trục sinh hàng trăm ô), nên
+  // đếm số ô nhận được là đếm cái trần, không phải đếm mẫu số. Đo được trên
+  // document-intake: lưới thật 421 ô, UI in 200 vì đúng lỗi này.
+  const gridTotalCells = (() => {
+    const step = store.steps.find((s) => s.name === 'project_grid');
+    const n = step?.cells;
+    return typeof n === 'number' ? n : store.cells.length;
+  })();
 
   const handleUpload = useCallback((result: UploadResult) => {
     setUpload(result);
@@ -290,7 +317,7 @@ export default function App() {
                 </Tabs.Panel>
 
                 <Tabs.Panel value="grid">
-                  <GridHeatmap cells={store.cells} />
+                  <GridHeatmap cells={store.cells} totalCells={gridTotalCells} />
                 </Tabs.Panel>
 
                 <Tabs.Panel value="gates">
@@ -354,7 +381,11 @@ export default function App() {
                     disabled={store.status === 'running'}
                   />
                 )}
-                <StepProgress steps={store.steps} error={store.error} />
+                <StepProgress
+                  steps={store.steps}
+                  error={store.error}
+                  running={store.status === 'running'}
+                />
                 <SuiteLog logs={store.logs} running={store.status === 'running'} />
                 <WarningFeed warnings={store.warnings} />
               </Stack>

@@ -37,7 +37,10 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    // eslint-disable-next-line no-console
+    // Không có `eslint-disable no-console` ở đây: cấu hình lint của repo không
+    // bật rule đó, nên directive chỉ là một cảnh báo "directive thừa" chặn
+    // cổng `--max-warnings=0`. Một cổng kêu vì thứ không phải lỗi là cổng sẽ
+    // sớm bị người ta tắt.
     console.error('[CERTUS] panel render lỗi:', error, info.componentStack);
   }
 

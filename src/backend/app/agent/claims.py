@@ -83,6 +83,58 @@ def _interval(raw: Mapping[str, Any] | None) -> Interval | None:
     return Interval(**dict(raw)) if raw else None
 
 
+# Những trường của `Claim` mà mô hình hay nhét NHẦM vào trong `flags`. Đo được
+# trên cassette thật: `"flags": [{"mechanism": "Đối chiếu số ô unknown = 8 …"}]`
+# — nội dung đúng, chỗ để sai. Vớt các khoá này ra đúng chỗ của chúng.
+_FLAG_HOISTABLE = ("mechanism",)
+
+
+def _normalize_flags(item: Mapping[str, Any]) -> dict[str, Any]:
+    """Chuẩn hoá `flags` về `list[str]`, và vớt lại thứ bị đặt nhầm chỗ.
+
+    Hợp đồng nói `flags` là danh sách chuỗi, nhưng mô hình sinh ra ba dạng và
+    cả ba đều mang thông tin người dùng CẦN đọc:
+
+    · `"needs_kb:house/risk-bands.md"` — đúng khuôn, giữ nguyên.
+    · `{"mechanism": "…"}` — trường top-level bị nhét vào nhầm; nâng nó lên
+      thành `mechanism` thật để `ClaimInspector` in ra dòng "cơ chế: …",
+      thay vì hiển thị một object rỗng nghĩa dưới dạng badge.
+    · `{"na_reason": "legacy_exempt"}` — cờ viết dạng object; ép về đúng quy
+      ước `khoá:giá trị` mà `flags` vốn đã dùng trong cả repo.
+
+    Trả về một BẢN SAO của claim thô với `flags` đã sạch và các trường vớt
+    được điền vào đúng chỗ — chỉ khi mô hình BỎ TRỐNG trường đó, vì dữ liệu
+    đặt đúng chỗ luôn thắng dữ liệu đặt nhầm chỗ.
+
+    Bỏ chúng đi thay vì chuẩn hoá là chọn im lặng: mất đúng câu giải thích vì
+    sao claim được suy ra, mà người đọc không hề biết là mình đang thiếu.
+    """
+    raw = item.get("flags")
+    if raw is None:
+        raw = []
+    elif not isinstance(raw, Sequence) or isinstance(raw, str | bytes):
+        raw = [raw]
+
+    overrides: dict[str, Any] = {}
+    flags: list[str] = []
+    for entry in raw:
+        if isinstance(entry, str):
+            flags.append(entry)
+            continue
+        if isinstance(entry, Mapping):
+            for key, value in entry.items():
+                if key in _FLAG_HOISTABLE and not item.get(key) and isinstance(value, str):
+                    overrides[key] = value
+                else:
+                    flags.append(f"{key}:{value}")
+            continue
+        # Không phải chuỗi, không phải object — vẫn hiện nguyên văn. FlagList
+        # in cờ lạ ra thay vì lọc bỏ, và ở đây cũng vậy.
+        flags.append(str(entry))
+
+    return {**item, **overrides, "flags": flags}
+
+
 def _validate_shape(item: Mapping[str, Any], position: int) -> None:
     """Kiểm khuôn của một claim thô trước khi dựng model.
 
@@ -106,6 +158,10 @@ def parse_claims(raw: Mapping[str, Any]) -> list[Claim]:
     items = raw.get("claims")
     if not isinstance(items, list):
         raise ClaimParseError("thiếu mảng 'claims' trong output của model")
+
+    # Nắn khuôn những trường mô hình hay đặt sai chỗ, trước cả vòng kiểm khuôn.
+    # Thứ không phải object thì để nguyên cho vòng dưới nêu đích danh chỗ hỏng.
+    items = [_normalize_flags(c) if isinstance(c, Mapping) else c for c in items]
 
     for position, item in enumerate(items):
         if not isinstance(item, Mapping):

@@ -56,6 +56,12 @@ interface Datum extends HeatMapDatum {
 
 interface Props {
   cells: Cell[];
+  /**
+   * Số ô THẬT của lưới (từ bước `project_grid`). Khác `cells.length` khi backend
+   * chạm trần phát ô — và khác cả `rowAxis × colAxis` khi lưới có hơn hai trục,
+   * vì bản đồ nhiệt chỉ vẽ được một LÁT CẮT hai chiều.
+   */
+  totalCells?: number;
 }
 
 /** Điểm chỉ dùng để nivo có một giá trị số; MÀU không đọc từ nó. */
@@ -68,7 +74,7 @@ const BAND_ORDINAL: Record<Band, number> = {
   'N/A': 0,
 };
 
-export function GridHeatmap({ cells }: Props) {
+export function GridHeatmap({ cells, totalCells }: Props) {
   const scheme = useComputedColorScheme('light');
   const [selected, setSelected] = useState<Cell | null>(null);
 
@@ -101,6 +107,19 @@ export function GridHeatmap({ cells }: Props) {
   const breakdown = breakdownDenominator(cells.map((c) => c.band));
   const naCells = cells.filter((c) => c.band === 'N/A');
 
+  // Ba con số dễ bị nhầm là một:
+  //   `enumerated` — số ô THẬT của lưới (mẫu số của grid_coverage)
+  //   `cells.length` — số ô giao diện nhận được (có thể ít hơn: backend chặn trần)
+  //   `drawn` — số ô bản đồ nhiệt vẽ ra (một LÁT CẮT hai trục của lưới n chiều)
+  // Nói ra cả ba khi chúng lệch, thay vì để người xem đếm ô trên hình rồi tin.
+  const enumerated = totalCells ?? breakdown.enumerated;
+  const drawn = rowAxis.values.length * colAxis.values.length;
+  // Số trục của LƯỚI, không phải số trục của một ô: ở t=2 mỗi ô chỉ mang đúng
+  // hai trục, nên `Object.keys(cell.axes).length` luôn trả 2 và câu giải thích
+  // sẽ nói "lưới có 2 trục" ngay dưới một lưới 6 trục. Gom tên trục qua TẤT CẢ
+  // các ô mới ra con số thật.
+  const axisCount = new Set(cells.flatMap((c) => Object.keys(c?.axes ?? {}))).size;
+
   if (cells.length === 0) {
     return (
       <Alert color="gray" variant="light" title="Chưa có ô nào">
@@ -119,11 +138,37 @@ export function GridHeatmap({ cells }: Props) {
       </Box>
 
       <DenominatorTable
-        enumerated={breakdown.enumerated}
+        enumerated={enumerated}
         na={breakdown.na}
-        scoreable={breakdown.scoreable}
+        scoreable={enumerated - breakdown.na}
         excluded={0}
       />
+
+      {drawn < enumerated && (
+        <Alert
+          color="orange"
+          variant="light"
+          icon={<IconAlertTriangle size={18} />}
+          title={`Bản đồ nhiệt vẽ ${drawn}/${enumerated} ô — nó là MỘT LÁT CẮT, không phải cả lưới`}
+        >
+          <Text size="xs">
+            Lưới có {axisCount} trục nên mẫu số thật là {enumerated} ô t-wise. Màn hình phẳng chỉ
+            bày được hai chiều, nên hình dưới là lát cắt{' '}
+            <Text span ff="monospace" fw={600}>
+              {rowAxis.name} × {colAxis.name}
+            </Text>
+            {cells.length < enumerated && (
+              <>
+                {' '}
+                — và giao diện mới nhận {cells.length}/{enumerated} ô (backend chặn trần số ô gửi
+                lên)
+              </>
+            )}
+            . Đừng đếm ô trên hình để suy ra mẫu số: con số đúng nằm ở khối “Ô được liệt kê” ngay
+            trên và ở tab “Ba tầng mẫu số”.
+          </Text>
+        </Alert>
+      )}
 
       {naCells.length > 0 && (
         <Alert

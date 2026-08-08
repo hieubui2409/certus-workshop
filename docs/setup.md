@@ -6,11 +6,33 @@ Mục tiêu: chạy được CERTUS trên máy bạn trong ~20 phút. Nếu quá
 
 | | Phiên bản | Kiểm tra |
 |---|---|---|
-| Python | 3.11 trở lên | `python3 --version` |
+| Python | **3.11 · 3.12 · 3.13** (KHÔNG dùng 3.14) | `python3 --version` |
 | Node.js | 18 trở lên | `node --version` |
 | Git | bất kỳ | `git --version` |
 
 Không cần Docker. Không cần API key.
+
+> **Vì sao chặn Python 3.14.** `scipy==1.15.0` chỉ phát hành bản dựng sẵn (wheel)
+> tới `cp313`. Cài trên 3.14 thì `pip` không tìm được wheel nên quay sang **biên
+> dịch scipy từ mã nguồn** — việc đó cần một trình biên dịch C/Fortran, và trên
+> Windows sạch nó dừng ở `ERROR: Compiler cl cannot compile programs`. Ở buổi
+> chạy thử đã có người mất cả buổi tối ở đúng chỗ này rồi không hoàn thành được.
+>
+> Version bị ghim cứng có chủ đích: cả lớp phải ra **cùng một con số** thì mới so
+> bài với nhau được. Nới `scipy` là đổi con số Wilson của mọi người.
+>
+> Máy đang có 3.14? Cài thêm 3.12 rồi trỏ venv vào đúng nó — không cần gỡ 3.14:
+>
+> ```powershell
+> # Windows (winget) — sau đó dựng venv BẰNG 3.12
+> winget install Python.Python.3.12
+> py -3.12 -m venv .venv
+> ```
+>
+> ```bash
+> # macOS / Linux
+> python3.12 -m venv .venv
+> ```
 
 ## Bước 1 — Lấy mã nguồn
 

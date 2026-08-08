@@ -14,6 +14,7 @@
 
 import { Alert, Badge, Code, Group, Paper, Stack, Text } from '@mantine/core';
 import type { ErrorPayload, StepPayload } from '@/types/sse';
+import { BouncingDots } from './StreamingIndicator';
 
 /** Khớp 1-1 với STAGES của backend — thứ tự là hợp đồng. */
 const STEP_NAMES: Record<number, string> = {
@@ -34,9 +35,11 @@ interface Props {
   steps: StepPayload[];
   /** Lỗi có cấu trúc backend đã phát. Nó DỪNG pipeline, nên bảng phải nói ra. */
   error?: ErrorPayload | null;
+  /** Lượt chạy còn đang mở (`store.status === 'running'`). */
+  running?: boolean;
 }
 
-export function StepProgress({ steps, error }: Props) {
+export function StepProgress({ steps, error, running = false }: Props) {
   /** Trạng thái CUỐI CÙNG của mỗi bước; danh sách event gốc không bị sửa. */
   const latest = new Map<number, StepPayload>();
   for (const s of steps) latest.set(s.step, s);
@@ -53,6 +56,18 @@ export function StepProgress({ steps, error }: Props) {
   // biến một lỗi môi trường đọc được thành một sự cố không tên.
   const failedAt = error ? STEP_ORDER.find((n) => !isDone(latest.get(n)?.status)) : undefined;
 
+  // Backend phát event cho một bước KHI BƯỚC ĐÓ XONG (`_step` mặc định
+  // `status="done"`), không phát lúc bắt đầu. Nên bước đang chạy không có event
+  // nào, và bảng in "chưa chạy" cho nó — kể cả bước 4 chạy bộ kiểm mất vài phút
+  // trên repo thật. Người xem nhìn thấy một bảng đứng im và kết luận đã treo.
+  //
+  // Pipeline chạy TUẦN TỰ theo STAGES, nên "bước chưa xong đầu tiên trong khi
+  // lượt chạy còn mở" chính là bước đang chạy. Suy ở UI chứ không thêm event
+  // mới ở backend: cassette khoá theo nội dung, thêm event là đổi cả bộ ghi đã
+  // thu cho 1000 sinh viên.
+  const runningAt =
+    running && !error ? STEP_ORDER.find((n) => !isDone(latest.get(n)?.status)) : undefined;
+
   return (
     <Paper withBorder p="sm" radius="md">
       <Text size="xs" fw={600} mb={6}>
@@ -64,6 +79,7 @@ export function StepProgress({ steps, error }: Props) {
           let status = step?.status ?? 'chưa chạy';
           if (error && n === failedAt) status = 'failed';
           else if (error && failedAt !== undefined && n > failedAt) status = 'skipped';
+          else if (n === runningAt) status = 'running';
           const color =
             isDone(status)
               ? 'green'
@@ -82,9 +98,21 @@ export function StepProgress({ steps, error }: Props) {
               <Text size="xs" style={{ flex: 1 }} c={step ? undefined : 'dimmed'}>
                 {STEP_NAMES[n]}
               </Text>
-              <Badge size="xs" color={color} variant={isDone(status) ? 'light' : 'filled'}>
-                {status}
-              </Badge>
+              {status === 'running' ? (
+                // Bước đang chạy là bước duy nhất người xem cần biết CÓ đang
+                // nhúc nhích không — bước 4 (chạy bộ kiểm) mất vài phút trên repo
+                // thật, và một chữ "running" đứng im ở đó đọc y như đã treo.
+                <Badge size="xs" color={color} variant="filled" pl={6} pr={8}>
+                  <Group gap={5} wrap="nowrap" align="center">
+                    <BouncingDots size={3} color="currentColor" />
+                    <span>đang chạy</span>
+                  </Group>
+                </Badge>
+              ) : (
+                <Badge size="xs" color={color} variant={isDone(status) ? 'light' : 'filled'}>
+                  {status}
+                </Badge>
+              )}
             </Group>
           );
         })}

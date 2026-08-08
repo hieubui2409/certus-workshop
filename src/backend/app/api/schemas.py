@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.contracts.types import (
     Band,
@@ -117,12 +117,49 @@ class AxisDiscoveryResponse(BaseModel):
     read_only: bool = False
 
 
+class AcceptedFile(BaseModel):
+    """Một tệp ĐÃ NHẬN, kèm neo để đối chiếu.
+
+    `sha256` có mặt vì "đã nhận 14 tệp" là một con số không kiểm được: người
+    dùng không có cách nào biết 14 tệp ấy có đúng là 14 tệp họ nén hay không.
+    Băm nội dung thật sau khi giải nén cho họ cái để so.
+    """
+
+    path: str
+    bytes: int
+    sha256: str
+
+
 class UploadAck(BaseModel):
+    """Biên lai của một lượt ingest.
+
+    `accepted` là DANH SÁCH chứ không phải một con số đếm. Trước bản này ack
+    chỉ có `files_accepted: int`, và UI — vốn dựng bảng từ danh sách — in ra
+    "Đã nhận 0 tệp" ngay dưới một repo vừa nạp 14 tệp thành công. Đúng cái lỗi
+    CERTUS dạy người khác đừng phạm: một con số không có gì neo vào thì không
+    ai kiểm được, kể cả khi nó đúng.
+
+    `files_accepted` giữ lại để không phá client cũ, nhưng nó phải luôn bằng
+    `len(accepted)` — xem `model_validator` bên dưới, và test
+    `tests/test_upload_limits.py` khoá bất biến đó.
+    """
+
     upload_id: str
+    accepted: list[AcceptedFile] = Field(default_factory=list)
     files_accepted: int
     files_rejected: int
     rejected_reasons: dict[str, str] = Field(default_factory=dict)
     bytes_total: int
+
+    @model_validator(mode="after")
+    def _count_matches_list(self) -> UploadAck:
+        if self.files_accepted != len(self.accepted):
+            raise ValueError(
+                f"files_accepted={self.files_accepted} nhưng danh sách accepted có "
+                f"{len(self.accepted)} mục — một con số đếm lệch khỏi thứ nó đếm là "
+                "một con số không có neo."
+            )
+        return self
 
 
 # --------------------------------------------------------------------------

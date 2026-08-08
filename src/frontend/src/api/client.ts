@@ -84,11 +84,16 @@ export async function uploadSample(sampleId: string): Promise<UploadResult> {
 
 /**
  * Hình dạng thật của phản hồi `/api/upload` (`UploadAck` —
- * `src/backend/app/api/schemas.py`). Backend chỉ đếm, không liệt kê từng tệp
- * đã nhận — khác với tệp đã loại, nơi `rejected_reasons` cho path + lý do.
+ * `src/backend/app/api/schemas.py`). Cả hai chiều đều có danh sách per-file:
+ * `accepted` cho tệp đã nhận (path + bytes + sha256 của byte thật ghi ra đĩa),
+ * `rejected_reasons` cho tệp bị loại (path + lý do).
+ *
+ * `files_accepted` là số đếm dư thừa — backend đã khoá nó bằng validator để
+ * luôn bằng `accepted.length`. Đọc danh sách, đừng đọc con số.
  */
 interface UploadAck {
   upload_id: string;
+  accepted: { path: string; bytes: number; sha256: string }[];
   files_accepted: number;
   files_rejected: number;
   rejected_reasons: Record<string, string>;
@@ -115,9 +120,9 @@ export async function uploadZip(file: File): Promise<UploadResult> {
     run_id: ack.upload_id,
     source: 'zip',
     label: file.name,
-    // Backend chỉ trả `files_accepted` (một con số) — không có danh sách
-    // per-file cho tệp ĐÃ NHẬN, nên không có gì thật để đặt vào đây.
-    accepted: [],
+    // `?? []` phòng backend cũ chưa có trường này: bảng rỗng vẫn hơn màn
+    // trắng, và badge bên cạnh nó đọc từ cùng một mảng nên không nói dối.
+    accepted: ack.accepted ?? [],
     rejected,
     upload_id: ack.upload_id,
   };

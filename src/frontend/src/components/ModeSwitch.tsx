@@ -36,6 +36,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { getMode, setMode, type LlmMode } from '@/api/mode';
 
+/** `Code` inline của Mantine là nowrap; cho phép ngắt để không tràn Modal. */
+const WRAP = { whiteSpace: 'normal' as const, overflowWrap: 'anywhere' as const };
+
 export function ModeSwitch() {
   const qc = useQueryClient();
   const [guideOpen, guide] = useDisclosure(false);
@@ -212,16 +215,44 @@ uvicorn app.main:app --reload --port 8000`}
           </List>
         </div>
 
-        <Alert color="orange" variant="light" icon={<IconAlertTriangle size={16} />} title="Hai chỗ hay vấp (đã kiểm chứng)">
-          <List size="sm" spacing={4}>
+        {/* `Code` inline là `white-space: nowrap` theo mặc định của Mantine, nên một
+            dòng có nhiều mẩu code (`127.0.0.1:8317`, `claude-opus-5[1m]`…) không
+            ngắt được và chảy tràn ra ngoài Modal — chụp thật thấy chữ cụt ở mép
+            phải, đúng chỗ nói cách sửa lỗi. Cho phép ngắt trong khối này. */}
+        <Alert
+          color="orange"
+          variant="light"
+          icon={<IconAlertTriangle size={16} />}
+          title="Hai chỗ hay vấp (đã kiểm chứng)"
+          styles={{ body: { minWidth: 0 }, message: { overflowWrap: 'anywhere' } }}
+        >
+          {/* Đo thật trong Modal: `li.mantine-List-item` có `white-space: nowrap`,
+              nên một dòng lẫn chữ và nhiều mẩu <Code> (`127.0.0.1:8317`,
+              `claude-opus-5[1m]`…) không ngắt được — scrollWidth 537 > clientWidth
+              518, chữ cụt ĐÚNG ở chỗ nói cách sửa lỗi. Mở `nowrap` ở `li`, và giữ
+              dấu đầu dòng đúng chỗ bằng `display: list-item` (đặt `normal` trần
+              làm bullet rớt xuống hàng riêng). */}
+          <List
+            size="sm"
+            spacing={4}
+            styles={{
+              item: { whiteSpace: 'normal' },
+              // Mantine bọc nội dung item trong một span `inline-block`; mở
+              // `nowrap` ở `li` mà để nguyên span thì dấu đầu dòng và nội dung
+              // thành hai khối và bullet rớt xuống hàng riêng. Cho span chảy
+              // theo dòng chữ để nó nằm đúng cạnh dấu đầu dòng.
+              itemWrapper: { display: 'inline' },
+              itemLabel: { display: 'inline' },
+            }}
+          >
             <List.Item>
-              Dùng <Code>localhost</Code>, đừng <Code>127.0.0.1</Code> — proxy thường chỉ nghe trên
-              IPv6 (<Code>[::1]</Code>), nên <Code>127.0.0.1:8317</Code> báo <i>connection refused</i>.
+              Dùng <Code style={WRAP}>localhost</Code>, đừng <Code style={WRAP}>127.0.0.1</Code> — proxy thường chỉ nghe trên
+              IPv6 (<Code style={WRAP}>[::1]</Code>), nên <Code style={WRAP}>127.0.0.1:8317</Code> báo <i>connection refused</i>.
             </List.Item>
             <List.Item>
-              Tránh biến thể model có hậu tố <Code>[1m]</Code> (ví dụ <Code>claude-opus-5[1m]</Code>) —
-              nó có thể làm proxy treo. Dùng tên trần <Code>claude-opus-5</Code> hoặc{' '}
-              <Code>claude-haiku-4-5</Code>.
+              Tránh biến thể model có hậu tố <Code style={WRAP}>[1m]</Code> (ví dụ <Code style={WRAP}>claude-opus-5[1m]</Code>) —
+              nó có thể làm proxy treo. Dùng tên trần <Code style={WRAP}>claude-opus-5</Code> hoặc{' '}
+              <Code style={WRAP}>claude-haiku-4-5</Code>.
             </List.Item>
           </List>
         </Alert>

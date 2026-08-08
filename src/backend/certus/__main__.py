@@ -14,6 +14,34 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
+def _force_utf8_stdio() -> None:
+    """Ép stdout/stderr sang UTF-8 trước khi in ký tự đầu tiên.
+
+    Console Windows mặc định là code page cũ (cp1252 / cp437). Mọi thứ CERTUS in
+    ra đều là tiếng Việt có dấu kèm khung `─`, nên `print` đầu tiên đã ném
+    `UnicodeEncodeError: 'charmap' codec can't encode character '\\u1ee5'` —
+    chữ `ụ` trong chính từ "mục" ở dòng tiêu đề của `doctor`. Người dùng nhận
+    một traceback thay vì một bảng chẩn đoán, ở đúng lệnh đầu tiên họ chạy.
+
+    `errors="replace"` chứ không phải `"strict"`: nếu vì lý do nào đó terminal
+    vẫn không nhận được UTF-8, mất một ký tự vẫn hơn mất cả câu trả lời — một
+    dấu `?` đọc được là hỏng hiển thị, một traceback đọc như sản phẩm hỏng.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:  # stream bị thay bằng thứ không phải TextIOWrapper
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            # Đổi encoding không được thì cứ chạy tiếp: bảng có thể hỏng chữ,
+            # nhưng chết ở đây thì chẳng có bảng nào cả.
+            pass
+
+
+_force_utf8_stdio()
+
+
 def cmd_doctor(_args) -> int:
     from app.api.routes.health import doctor
 

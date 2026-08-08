@@ -47,6 +47,15 @@ export const WARNING_CATALOGUE: Record<string, WarningStyle> = {
     explain:
       'Khoảng tin cậy rộng hơn cả 30 điểm phần trăm — bản thân con số điểm gần như không mang thông tin. Cần thêm mẫu trước khi đọc tỉ lệ này như một kết luận.',
   },
+  // Lưới nhiều trục sinh hàng trăm ô; backend chặn trần số ô đẩy qua SSE. Trần đó
+  // phải TỰ KHAI, vì nếu im lặng thì người xem đếm ô trên bản đồ nhiệt và tưởng
+  // đó là mẫu số — đo được trên document-intake: lưới thật 421 ô, UI từng in 200.
+  'cells-truncated': {
+    severity: 'warn',
+    title: 'Lưới bị cắt bớt khi gửi lên giao diện',
+    explain:
+      'Chỉ một phần đầu của lưới được gửi lên để trình duyệt không đứng hình. Mẫu số THẬT của grid_coverage vẫn là toàn bộ lưới — đọc con số ở tab “Ba tầng mẫu số”, đừng đếm ô trên bản đồ nhiệt.',
+  },
   'cluster-floor': {
     severity: 'critical',
     title: 'Zone rơi vào route cluster-floor',

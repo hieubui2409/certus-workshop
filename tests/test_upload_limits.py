@@ -12,6 +12,7 @@ không qua HTTP, vì zipfile không có API bình thường để khai một hea
 
 from __future__ import annotations
 
+import hashlib
 import io
 import sys
 import zipfile
@@ -19,12 +20,14 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 BACKEND = Path(__file__).resolve().parent.parent / "src" / "backend"
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from app.api.routes.upload import _read_bounded  # noqa: E402
+from app.api.schemas import AcceptedFile, UploadAck  # noqa: E402
 from app.contracts.errors import CertusError  # noqa: E402
 from app.main import app  # noqa: E402
 from app.policy.data_policy import load_policy  # noqa: E402
@@ -153,3 +156,52 @@ def test_read_bounded_cho_qua_khi_byte_that_nam_trong_tran(tmp_path: Path) -> No
     with zipfile.ZipFile(raw) as zf:
         out = _read_bounded(zf, "vua.bin", limit=4096)
     assert out == data
+
+
+# --------------------------------------------------- biên lai: số phải có neo
+
+
+def test_ack_liet_ke_tung_tep_da_nhan_kem_bam_noi_dung_that(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    """`files_accepted` phải đi kèm DANH SÁCH, không đứng một mình.
+
+    Trước bản vá `/api/upload` chỉ trả một con số đếm, còn UI dựng bảng từ
+    danh sách — nên màn hình in "Đã nhận 0 tệp" ngay dưới một lượt nạp 14 tệp
+    thành công. Một con số không neo vào thứ nó đếm thì không ai kiểm được nó,
+    kể cả khi nó đúng: đúng luật CERTUS dạy người khác.
+    """
+    a = b"x = 1\n"
+    b = b"y = 2\n" * 3
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("pkg/a.py", a)
+        zf.writestr("pkg/b.py", b)
+    buf.seek(0)
+
+    res = client.post(
+        "/api/upload", headers=auth, files={"file": ("t.zip", buf, "application/zip")}
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+
+    assert body["files_accepted"] == len(body["accepted"]) == 2, body
+    got = {f["path"]: f for f in body["accepted"]}
+    assert set(got) == {"pkg/a.py", "pkg/b.py"}
+    # Băm phải là băm của BYTE THẬT đã ghi ra đĩa, không phải của gì khai
+    # trong header zip.
+    assert got["pkg/a.py"]["sha256"] == hashlib.sha256(a).hexdigest()
+    assert got["pkg/b.py"]["bytes"] == len(b)
+    assert body["bytes_total"] == len(a) + len(b)
+
+
+def test_ack_tu_choi_khi_so_dem_lech_khoi_danh_sach() -> None:
+    """Bất biến được cưỡng chế tại schema, không chỉ trong tài liệu."""
+    with pytest.raises(ValidationError):
+        UploadAck(
+            upload_id="deadbeef",
+            accepted=[AcceptedFile(path="a.py", bytes=1, sha256="00")],
+            files_accepted=14,
+            files_rejected=0,
+            bytes_total=1,
+        )

@@ -33,6 +33,7 @@ import {
   type AxisStreamState,
 } from '@/api/axes';
 import type { AxisCandidate, AxisDiscoveryResponse, UploadResult } from '@/types/api';
+import { StreamingCaret, StreamingInline } from './StreamingIndicator';
 
 const STEP_LABEL: Record<string, string> = {
   scan_repo: 'Quét mã nguồn tìm Enum',
@@ -56,17 +57,19 @@ function AxisStreamLog({ state, running }: { state: AxisStreamState; running: bo
           <Group key={s.name} gap="xs" wrap="nowrap">
             {s.status === 'running' ? <Loader size={12} /> : <IconCheck size={13} color="var(--mantine-color-green-6)" />}
             <Text size="xs" fw={500}>{STEP_LABEL[s.name] ?? s.name}</Text>
-            <Text size="xs" c="dimmed" style={{ fontFamily: 'var(--mantine-font-family-monospace)' }}>
-              {s.status === 'done' ? summarizeStep(s) : '…'}
+            <Text size="xs" c="dimmed" style={{ fontFamily: 'var(--mantine-font-family-monospace)' }} component="span">
+              {s.status === 'done' ? summarizeStep(s) : <StreamingInline />}
             </Text>
           </Group>
         ))}
 
         {state.candidates.length > 0 && (
-          <Text size="xs" c="dimmed">
-            đã chấm {state.candidates.length} trục
-            {running ? ' — đang chạy' : ''}
-          </Text>
+          <Group gap={6} wrap="nowrap" align="center">
+            <Text size="xs" c="dimmed">
+              đã chấm {state.candidates.length} trục
+            </Text>
+            {running && <StreamingInline text="đang chạy" />}
+          </Group>
         )}
 
         {/* Mô hình bị bỏ qua: nói THẲNG lý do. Im lặng ở đây đọc thành "mô hình
@@ -93,6 +96,7 @@ function AxisStreamLog({ state, running }: { state: AxisStreamState; running: bo
               }}
             >
               {state.llmText}
+              {running && <StreamingCaret />}
             </Text>
           </Stack>
         )}
@@ -164,7 +168,10 @@ export function AxisSelectionPanel({ upload, onConfirm, confirmed }: Props) {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [stream, setStream] = useState<AxisStreamState>(EMPTY_AXIS_STREAM);
 
-  const body = upload.target
+  // ĐÚNG MỘT nguồn — backend từ chối nếu nhận hai. Tính ở một chỗ duy nhất rồi
+  // dùng lại cho cả đường JSON (mock) lẫn đường SSE (backend thật): hai chỗ tính
+  // cùng một thứ là hai chỗ để lệch nhau.
+  const body: { target?: string; upload_id?: string; local_path?: string } = upload.target
     ? { target: upload.target }
     : upload.local_path
       ? { local_path: upload.local_path }
@@ -190,11 +197,19 @@ export function AxisSelectionPanel({ upload, onConfirm, confirmed }: Props) {
 
     const ctrl = new AbortController();
     let acc = EMPTY_AXIS_STREAM;
+    // Dùng LẠI `body` đã tính ở trên chứ không dựng nguồn lần thứ hai. Bản trước
+    // gửi `target` và `uploadId` song song cho repo mẫu (`uploadId` rơi về
+    // `upload.run_id`, mà với repo mẫu `run_id` chính là tên repo), nên backend
+    // nhận HAI nguồn cùng lúc và từ chối:
+    //   "phải có ĐÚNG một trong `target`, `upload_id` và `local_path`"
+    // Panel hiện hộp đỏ đó ngay sau khi chọn repo mẫu — tức là bước HITL chọn
+    // trục không dùng được. Một nguồn tính ở một chỗ thì không lệch được với
+    // chính nó; hai chỗ tính thì sớm muộn cũng lệch, và đây là lần lệch đó.
     openAxisStream(
       {
-        target: upload.target,
-        uploadId: upload.local_path ? undefined : (upload.upload_id ?? upload.run_id),
-        localPath: upload.local_path,
+        target: body.target,
+        uploadId: body.upload_id,
+        localPath: body.local_path,
       },
       {
         signal: ctrl.signal,

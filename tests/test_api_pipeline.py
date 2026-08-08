@@ -250,6 +250,36 @@ def test_doctor_tra_ve_mau_so(client: TestClient) -> None:
 
 
 @pytest.mark.parametrize(
+    "field,expect_ok",
+    [
+        ("anthropic_api_key", True),
+        ("anthropic_auth_token", True),
+        (None, False),
+    ],
+)
+def test_doctor_chap_nhan_ca_hai_duong_vao_credential(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, field: str | None, expect_ok: bool
+) -> None:
+    """Chế độ live có HAI đường vào hợp lệ: api_key HOẶC auth_token bearer.
+
+    Đo được trên một lượt live thật: analyze chạy trọn 9 bước bằng
+    `CERTUS_ANTHROPIC_AUTH_TOKEN`, trong khi `/doctor` vẫn báo đỏ "API key".
+    Một chẩn đoán sai đắt hơn không chẩn đoán — nó đẩy người dùng đi sửa cái
+    không hỏng, và làm mất lòng tin vào chín mục còn lại đang nói đúng.
+    """
+    from app.settings import settings as live_settings
+
+    monkeypatch.setattr(live_settings, "llm_mode", "live")
+    monkeypatch.setattr(live_settings, "anthropic_api_key", None)
+    monkeypatch.setattr(live_settings, "anthropic_auth_token", None)
+    if field:
+        monkeypatch.setattr(live_settings, field, "giá-trị-bất-kỳ")
+
+    checks = {c["name"]: c for c in client.get("/doctor").json()["checks"]}
+    assert checks["API key"]["ok"] is expect_ok, checks["API key"]["detail"]
+
+
+@pytest.mark.parametrize(
     "method,path",
     [
         ("get", "/api/samples"),

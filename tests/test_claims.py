@@ -161,3 +161,61 @@ def test_parse_rejects_output_without_a_claims_array():
 def test_parse_rejects_a_non_object_entry():
     with pytest.raises(ClaimParseError):
         parse_claims({"claims": ["chỉ là một chuỗi"]})
+
+
+# ───────────── `flags` mô hình viết sai khuôn (đo trên cassette thật) ─────────────
+
+
+def _one(**over):
+    """Một claim tối thiểu hợp lệ, cho phép đè từng trường."""
+    return {
+        "claims": [
+            {
+                "id": "c1",
+                "text": "…",
+                "label": "DERIVED",
+                "evidence_ids": ["artifact.grid_coverage"],
+                **over,
+            }
+        ]
+    }
+
+
+def test_flags_dang_chuoi_van_giu_nguyen():
+    (claim,) = parse_claims(_one(flags=["needs_kb:house/risk-bands.md"]))
+    assert claim.flags == ["needs_kb:house/risk-bands.md"]
+
+
+def test_mechanism_bi_nhet_vao_flags_duoc_vot_len_dung_cho():
+    """Đo được trên `analyze__6dd1265c847a.json`: mô hình viết
+    `"flags": [{"mechanism": "Đối chiếu số ô unknown = 8 …"}]`.
+
+    Nội dung đúng, chỗ để sai. Nó phải thành `claim.mechanism` để giao diện in
+    ra dòng "cơ chế: …", chứ không phải một badge object vô nghĩa — và tuyệt
+    đối không được làm chết cả lượt phân tích.
+    """
+    (claim,) = parse_claims(_one(flags=[{"mechanism": "Đối chiếu số ô unknown = 8."}]))
+    assert claim.mechanism == "Đối chiếu số ô unknown = 8."
+    assert claim.flags == []
+
+
+def test_mechanism_dat_dung_cho_thang_cai_dat_nham_cho():
+    (claim,) = parse_claims(
+        _one(mechanism="đúng chỗ", flags=[{"mechanism": "nhầm chỗ"}])
+    )
+    assert claim.mechanism == "đúng chỗ"
+    assert claim.flags == ["mechanism:nhầm chỗ"]
+
+
+def test_co_dang_object_bi_ep_ve_quy_uoc_khoa_gia_tri():
+    """`flags` trong repo vốn đã dùng `khoá:giá trị` (`na_reason:legacy_exempt`),
+    nên một cờ viết dạng object ép về đúng quy ước đó thay vì bị vứt."""
+    (claim,) = parse_claims(_one(flags=[{"na_reason": "legacy_exempt"}]))
+    assert claim.flags == ["na_reason:legacy_exempt"]
+
+
+def test_flags_khong_phai_list_van_khong_lam_chet_luot_phan_tich():
+    (claim,) = parse_claims(_one(flags="một chuỗi trần"))
+    assert claim.flags == ["một chuỗi trần"]
+    (claim,) = parse_claims(_one(flags=[42, None]))
+    assert claim.flags == ["42", "None"]
