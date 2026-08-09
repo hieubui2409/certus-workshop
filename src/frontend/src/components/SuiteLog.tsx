@@ -45,7 +45,15 @@ export function SuiteLog({ logs, running }: Props) {
         </Badge>
       </Group>
       <ScrollArea.Autosize mah={260} type="auto">
-        <Code block style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>
+        {/* `pre-wrap` xuống dòng ở KHOẢNG TRẮNG, nhưng đuôi log hay là một URL
+            dài không có khoảng trắng nào — `postgresql://vsf:vsf@localhost:5433/
+            vsf_aio` chạy thẳng ra ngoài khung và bị cắt. Cắt đúng chỗ tệ nhất:
+            phần khuất là cổng và tên DB, tức chính thứ người đọc cần. Thêm
+            `anywhere` để ngắt được cả trong lòng một token. */}
+        <Code
+          block
+          style={{ fontSize: 11, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+        >
           {logs.map((l, i) => (
             <Box
               key={i}

@@ -1110,6 +1110,54 @@ async def analyze(req: AnalyzeRequest, settings: Settings | None = None) -> Pipe
     return PipelineResult(response=response, events=events)
 
 
+#: Dòng `KEY=value` mà một bộ kiểm in ra khi nó TỪ CHỐI chạy vì thiếu biến môi
+#: trường. Tên biến kiểu shell (hoa, gạch dưới), giá trị là phần còn lại tới hết
+#: dòng hoặc tới khoảng trắng — đủ để bắt cả URL có `://`, `@`, `:cổng`, `/db`.
+_ENV_HINT_RE = re.compile(r"\b([A-Z][A-Z0-9_]{2,})=(\S+)")
+
+#: Biến KHÔNG bao giờ gợi ý dán lại, dù có xuất hiện trong log: chúng là biến
+#: của MÁY CHỦ, và bảo người dùng đặt lại `PATH` hay `HOME` cho repo của họ là
+#: một lời khuyên vừa vô nghĩa vừa nguy hiểm.
+_ENV_HINT_DENY = frozenset({"PATH", "HOME", "PWD", "TMPDIR", "USER", "SHELL", "LANG"})
+
+
+def _suggest_env_fix(tail: str) -> str:
+    """Trích những dòng `KEY=value` mà chính repo đích đã in ra trong log lỗi.
+
+    Vì sao đáng có một hàm riêng thay vì để người dùng tự đọc log: khi một repo
+    từ chối chạy vì thiếu biến môi trường, nó gần như luôn in ra ĐÚNG dòng cần
+    đặt. Đo trên `vsf/document-intake`: conftest chặn ở cổng DB rồi in nguyên
+    văn `Set VSF_DATABASE_URL=postgresql://vsf:vsf@localhost:5433/vsf_aio`.
+    Câu trả lời nằm sẵn trong log — nhưng nó là dòng thứ mười mấy của một khối
+    chẩn đoán dài, dưới một tiêu đề đỏ ghi "sai cách gọi pytest (usage error)".
+
+    Người đọc dừng ở tiêu đề đó, và tiêu đề đó ĐÚNG về mặt kỹ thuật (pytest quả
+    thật trả exit 4) mà SAI về mặt hành động: nó nghe như lỗi của CERTUS gọi sai
+    lệnh, trong khi việc cần làm là dán một dòng vào ô 'biến môi trường'. Kéo
+    dòng đó lên đầu là biến một ngõ cụt thành một bước tiếp theo.
+
+    Không trích được gì thì trả lời khuyên chung — KHÔNG bịa ra một tên biến.
+    """
+    seen: dict[str, str] = {}
+    for name, value in _ENV_HINT_RE.findall(tail or ""):
+        if name not in _ENV_HINT_DENY and name not in seen:
+            seen[name] = value.rstrip(".,;:'\"`)")
+    if not seen:
+        return (
+            "Sửa được không: đọc đuôi log dưới đây. Repo đòi một biến môi trường "
+            "hoặc một dịch vụ nào đó thì khai ở ô 'Lệnh' / 'Biến môi trường' "
+            "trong khối 'Cách chạy bộ kiểm' (cột phải) rồi chạy lại.\n"
+        )
+    lines = "\n".join(f"  {k}={v}" for k, v in seen.items())
+    return (
+        "CÁCH SỬA — chính repo đích đã in ra biến nó cần. Dán nguyên văn "
+        f"{'dòng' if len(seen) == 1 else 'các dòng'} dưới đây vào ô 'Biến môi "
+        "trường' (khối 'Cách chạy bộ kiểm', cột phải) rồi chạy lại:\n"
+        f"{lines}\n"
+        "Kiểm trước khi chạy lại: dịch vụ ở địa chỉ đó phải đang chạy thật.\n"
+    )
+
+
 def run_target_suite(
     root: Path,
     plan: ProvisionPlan | None = None,
@@ -1174,7 +1222,7 @@ def run_target_suite(
     # trên 100% là dấu hiệu đầu tiên nhìn thấy được của chuyện đó.
     lines_total = max(lines_total, lines_hit)
 
-    # ── bộ kiểm KHÔNG chạy được ⇒ dừng, không đo tiếp ────────────────────────
+    # ── bộ kiểm KHÔNG chạy được ⇒ dừng, không đo tiếp ─────────────────────────
     # Exit code khác 0 mà KHÔNG thu được dòng phủ nào nghĩa là pytest chưa từng
     # chạy tới phần thân: collect fail, thiếu dependency, import nổ. Trả
     # `(exit, set(), (0,0))` rồi đi tiếp thì mọi ô rơi `coverage_mismatch` và UI
@@ -1231,9 +1279,7 @@ def run_target_suite(
             "lệ ở đây là biến 'tôi không đo được' thành 'tôi đã đo và kết quả tốt'.\n"
             f"Môi trường đã dùng: {outcome.plan.kind} — {outcome.plan.reason}\n"
             f"Lệnh: {' '.join(outcome.plan.argv)}\n"
-            "Sửa được không: đọc đuôi log dưới đây. Repo đòi một biến môi trường "
-            "hoặc một dịch vụ nào đó thì khai ở ô 'lệnh chạy bộ kiểm' / 'biến môi "
-            "trường' rồi chạy lại.\n"
+            f"{_suggest_env_fix(outcome.output_tail)}"
             f"Đuôi log:\n{outcome.output_tail}"
         )
     if outcome.exit_code != 0 and not covered:

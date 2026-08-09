@@ -36,7 +36,19 @@ export function WarningFeed({ warnings }: Props) {
       withBorder
       p="md"
       radius="md"
-      style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+      /* `flex: 1` để chiếm hết phần thừa khi cột còn rộng chỗ, nhưng KHÔNG được
+         co dưới một mức đọc được: cột phải nay tự cuộn, nên khi các khối trên
+         nó cao lên (chẩn đoán `SuiteRunFailed` chẳng hạn) thì flexbox sẽ bóp
+         khối này xuống còn vài pixel — danh sách cảnh báo biến mất khỏi màn
+         hình đúng lúc có nhiều cảnh báo nhất. `minHeight` là sàn chống việc đó;
+         `flexShrink: 0` để nó bị đẩy xuống dưới thay vì bị nén. */
+      style={{
+        flex: 1,
+        minHeight: 220,
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+      }}
     >
       <Stack gap="sm" style={{ flex: 1, minHeight: 0 }}>
         <Group justify="space-between" align="center">

@@ -342,12 +342,26 @@ export default function App() {
               </ErrorBoundary>
             </Grid.Col>
 
-            {/* Cột phải KHÔNG tự cuộn (bỏ scrollbar ngoài) — nó là flex-column
-                bó sát viewport, để WarningFeed bên trong nuốt phần tràn bằng
-                ScrollArea RIÊNG của nó. Nhờ vậy chỉ còn MỘT scrollbar: của Cảnh báo. */}
+            {/* Cột phải bó sát viewport VÀ tự cuộn được.
+                Trước bản này nó là flex-column KHÔNG có `overflowY`, với lập
+                luận "để WarningFeed nuốt phần tràn bằng ScrollArea riêng, nhờ
+                vậy chỉ còn một scrollbar". Lập luận đó chỉ đúng khi mọi khối
+                TRÊN WarningFeed đều thấp và cố định. Đo được lúc chạy repo
+                thật: khối lỗi `SuiteRunFailed` in nguyên văn chẩn đoán mười mấy
+                dòng, cộng ô "Cách chạy bộ kiểm" chỉ hiện với repo thật, cộng
+                bảng chín bước — tổng vượt chiều cao màn hình, và phần dôi ra bị
+                CẮT CỤT chứ không cuộn. Người dùng mất đúng đoạn cuối của thông
+                điệp lỗi, tức đoạn nói phải sửa gì.
+                Nay cột tự cuộn. Hai scrollbar lồng nhau là cái giá phải trả, và
+                nó rẻ hơn nhiều so với việc giấu mất câu chẩn đoán. */}
             <Grid.Col
               span={{ base: 12, lg: 3 }}
-              style={{ maxHeight: 'calc(100dvh - 94px)', display: 'flex', flexDirection: 'column' }}
+              style={{
+                maxHeight: 'calc(100dvh - 94px)',
+                display: 'flex',
+                flexDirection: 'column',
+                overflowY: 'auto',
+              }}
             >
               <Stack gap="md" style={{ flex: 1, minHeight: 0 }}>
                 <RunControls

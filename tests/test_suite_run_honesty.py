@@ -103,3 +103,53 @@ def test_entry_symbol_khong_co_gi_phu_thi_bao_none(tmp_path: Path) -> None:
     """Không suy được thì trả None để nơi gọi khai thẳng, không bịa một cái tên."""
     (tmp_path / "m.py").write_text("def f():\n    return 0\n", encoding="utf-8")
     assert infer_entry_symbol(tmp_path, set()) is None
+
+
+# ── câu trả lời nằm sẵn trong log — kéo nó lên đầu ───────────────────────────
+#
+# Khi một repo từ chối chạy vì thiếu biến môi trường, nó gần như luôn in ra ĐÚNG
+# dòng cần đặt. Đo trên `vsf/document-intake`: conftest chặn ở cổng DB rồi in
+# nguyên văn `Set VSF_DATABASE_URL=postgresql://vsf:vsf@localhost:5433/vsf_aio`.
+# Trước bản này dòng đó nằm ở giữa một khối chẩn đoán dài, dưới tiêu đề đỏ ghi
+# "sai cách gọi pytest (usage error)" — một tiêu đề ĐÚNG kỹ thuật mà SAI hành
+# động: nó đọc như lỗi của CERTUS, không như "bạn cần dán một dòng vào ô kia".
+
+
+#: Đuôi log THẬT, chép nguyên văn từ một lượt chạy `../vsf/document-intake`.
+_DOCINTAKE_TAIL = (
+    "Installed 1 package in 4ms\n"
+    "ERROR: REFUSING to collect/run tests against DB port 5432 "
+    "(url='postgresql://vsf:vsf@localhost:5432/vsf_aio') — the test suite MUST "
+    "target the isolated test container :5433. Set "
+    "VSF_DATABASE_URL=postgresql://vsf:vsf@localhost:5433/vsf_aio before running "
+    "pytest. Running against :5432 would TRUNCATE the real dev database.\n"
+)
+
+
+def test_goi_y_env_trich_dung_dong_repo_da_in_ra() -> None:
+    """Đúng biến, đúng GIÁ TRỊ ĐÍCH — không phải giá trị sai trong câu than phiền."""
+    from app.orchestrator.pipeline import _suggest_env_fix
+
+    out = _suggest_env_fix(_DOCINTAKE_TAIL)
+    assert "VSF_DATABASE_URL=postgresql://vsf:vsf@localhost:5433/vsf_aio" in out
+    # Log nhắc :5432 TRƯỚC (đó là cái sai). Gợi ý dán cổng sai vào là đưa người
+    # dùng đi đúng một vòng rồi quay lại chỗ cũ.
+    assert "localhost:5432" not in out
+
+
+def test_goi_y_env_khong_bia_ten_bien_khi_log_khong_noi_gi() -> None:
+    """Không trích được thì khuyên chung — tuyệt đối không dựng ra một tên biến."""
+    from app.orchestrator.pipeline import _suggest_env_fix
+
+    out = _suggest_env_fix("ModuleNotFoundError: No module named 'foo'\n")
+    assert "CÁCH SỬA" not in out
+    assert "=" not in out.replace("'Lệnh' / 'Biến môi trường'", "")
+
+
+def test_goi_y_env_bo_qua_bien_cua_may_chu() -> None:
+    """`PATH`/`HOME` lọt vào log là chuyện thường; bảo người dùng đặt lại chúng
+    cho repo của họ thì vừa vô nghĩa vừa nguy hiểm."""
+    from app.orchestrator.pipeline import _suggest_env_fix
+
+    out = _suggest_env_fix("PATH=/usr/bin HOME=/root TMPDIR=/tmp\n")
+    assert "CÁCH SỬA" not in out

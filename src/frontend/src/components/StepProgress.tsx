@@ -122,7 +122,14 @@ export function StepProgress({ steps, error, running = false }: Props) {
         // trường đã dùng, lệnh đã chạy và đuôi log. Tóm tắt lại ở đây là ném đi
         // đúng phần giúp người dùng sửa được.
         <Alert color="red" variant="light" mt="sm" p="xs" title={error.code}>
-          <Code block style={{ whiteSpace: 'pre-wrap', fontSize: 11 }}>
+          {/* `overflowWrap: anywhere` vì thông điệp này chứa lệnh và URL dài
+              không có khoảng trắng để ngắt: `pre-wrap` một mình để chúng chạy
+              thẳng ra ngoài khung, và phần khuất luôn là phần đuôi — đúng chỗ
+              đặt cổng, tên DB, tên biến cần khai. */}
+          <Code
+            block
+            style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: 11 }}
+          >
             {error.msg}
           </Code>
         </Alert>
