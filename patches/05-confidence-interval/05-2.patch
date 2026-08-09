@@ -1,0 +1,13 @@
+# patch 05-2 — Confidence score (chỗ gán)
+# lỗ hổng: 05-confidence-interval
+# vì sao: Bỏ luôn chỗ gán, không chỉ bỏ trường.
+--- a/src/backend/app/orchestrator/pipeline.py
++++ b/src/backend/app/orchestrator/pipeline.py
+@@ -741,7 +741,6 @@
+             cells_total=len(cells),
+             cells_na=sum(1 for c in cells if c.band is Band.NA),
+             cells_unknown=sum(1 for c in cells if c.band is Band.UNKNOWN),
+-            confidence=grid_rate.point,
+         )
+ 
+         # ── gate: sàn grid per-zone — bước 8, CHẠY TRƯỚC bước diễn giải ─────

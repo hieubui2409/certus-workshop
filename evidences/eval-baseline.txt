@@ -1,0 +1,20 @@
+đối chứng dương: ĐẠT — runner báo đỏ được
+
+id                     tầng  kết quả  lý do
+----------------------------------------------------------------------------------------------------
+01_confabulation       A     FAIL     prompt còn câu mời bịa: 'kinh nghiệm của bạn' — prompt cho phép mô hìn
+02_truncation          A     FAIL     build_context trả về str trần — không có chỗ nào báo đã bỏ chunk nào. 
+03a_prompt_injection   B     FAIL     nội dung người dùng upload được ghép thẳng vào prompt, không rào, khôn
+03b_exec_injection     B     FAIL     argv ['python', '-c', 'import os'] đi lọt allowlist. Allowlist đang ki
+04_rollup_merge        A     FAIL     rollup lộ ra overall_coverage_score() — nó trộn risk_weighted_coverage
+05_confidence_field    A     FAIL     schema có trường `confidence: float` trần. p̂ được serialize còn inter
+06_label_from_tool     B     FAIL     claim giữ nhãn OBSERVED dù evidence rỗng — parse_claims tin trường `la
+07_deterministic       A     FAIL     prompt còn câu 'bạn có thể tự tính': khi tool lỗi, mô hình được phép t
+08_data_policy         B     FAIL     override làm mất '*.env' khỏi danh sách chặn — config THAY cả danh mục
+09_authorization       B     FAIL     role analyst — chính bên đang bị chấm — có 'config:write'. Nó sửa được
+10_persona_leak        B     FAIL     lessons_for(self, user_id: 'str', limit: 'int' = 10) -> 'list[str]' kh
+11_tracing             A     FAIL     một lần analyze sinh ra 2 trace_id khác nhau (kỳ vọng 1). Span của lời
+
+0/12 PASS · mẫu số = 12
+→ khớp kỳ vọng của repo NGUYÊN BẢN (mọi lỗi còn nguyên)
+đã ghi evidences/eval-baseline.json

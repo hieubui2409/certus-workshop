@@ -1,0 +1,188 @@
+{
+  "run_id": "7a994c04c4a546b5b71c7c8b796801b4",
+  "trace_id": "7a994c04c4a546b5b71c7c8b796801b4",
+  "target": "ledger",
+  "coverage": {
+    "line": {
+      "name": "line_coverage",
+      "k": 136,
+      "n": 136,
+      "point": 1.0,
+      "interval": {
+        "lower": 0.9725299002664176,
+        "upper": 1.0,
+        "conf": 0.95,
+        "method": "wilson",
+        "n": 136,
+        "k": 136,
+        "n_eff": null,
+        "route": null,
+        "saturated": true
+      },
+      "flags": [
+        "interval-saturated"
+      ]
+    },
+    "mutation": null,
+    "grid": {
+      "name": "grid_coverage",
+      "k": 0,
+      "n": 6,
+      "point": 0.0,
+      "interval": {
+        "lower": 0.0,
+        "upper": 0.3903342879021653,
+        "conf": 0.95,
+        "method": "wilson",
+        "n": 6,
+        "k": 0,
+        "n_eff": null,
+        "route": null,
+        "saturated": true
+      },
+      "flags": [
+        "n-too-small",
+        "interval-wide",
+        "interval-saturated"
+      ]
+    },
+    "risk_weighted": {
+      "value": 0.0,
+      "cells_total": 6,
+      "cells_scored": 6,
+      "cells_excluded_na": 0
+    },
+    "per_zone": [
+      {
+        "zone_id": "catch_all",
+        "weight": 0.2,
+        "score": 0.0,
+        "cells_total": 6,
+        "cells_scoreable": 6,
+        "min_cell_band": null
+      }
+    ],
+    "cells": [
+      {
+        "id": "cell:interleaving=sequential|entry_type=debit",
+        "axes": {
+          "interleaving": "sequential",
+          "entry_type": "debit"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:interleaving=concurrent_sharded|entry_type=debit",
+        "axes": {
+          "interleaving": "concurrent_sharded",
+          "entry_type": "debit"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:interleaving=concurrent_shared|entry_type=debit",
+        "axes": {
+          "interleaving": "concurrent_shared",
+          "entry_type": "debit"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:interleaving=concurrent_shared|entry_type=credit",
+        "axes": {
+          "interleaving": "concurrent_shared",
+          "entry_type": "credit"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [
+          "coverage_mismatch"
+        ],
+        "evidence_id": [
+          "test:tests/test_engine.py::test_post_batch_nhieu_luong_ghi_du_so_dong_nhat_ky"
+        ]
+      },
+      {
+        "id": "cell:interleaving=concurrent_sharded|entry_type=credit",
+        "axes": {
+          "interleaving": "concurrent_sharded",
+          "entry_type": "credit"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [
+          "coverage_mismatch"
+        ],
+        "evidence_id": [
+          "test:tests/test_engine.py::test_post_batch_chia_theo_tai_khoan_chay_song_song"
+        ]
+      },
+      {
+        "id": "cell:interleaving=sequential|entry_type=credit",
+        "axes": {
+          "interleaving": "sequential",
+          "entry_type": "credit"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [
+          "coverage_mismatch"
+        ],
+        "evidence_id": [
+          "test:tests/test_engine.py::test_post_batch_tuan_tu_cho_dung_tong"
+        ]
+      }
+    ],
+    "cells_total": 6,
+    "cells_na": 0,
+    "cells_unknown": 6,
+    "confidence": 0.0
+  },
+  "claims": [],
+  "gates": [],
+  "verdict": "inconclusive",
+  "files_sent_to_model": [
+    ".coverage",
+    ".pytest_cache/.gitignore",
+    ".pytest_cache/CACHEDIR.TAG",
+    ".pytest_cache/README.md",
+    ".pytest_cache/v/cache/nodeids",
+    ".pytest_cache/v/randomly_seed",
+    "README.md",
+    "demo_race.py",
+    "ledger/__init__.py",
+    "ledger/accounts.py",
+    "ledger/engine.py",
+    "ledger/entries.py",
+    "ledger/money.py",
+    "pytest.ini",
+    "tests/test_accounts.py",
+    "tests/test_engine.py",
+    "tests/test_entries.py",
+    "tests/test_money.py"
+  ],
+  "warnings": [
+    "chưa có cassette cho bước diễn giải ở repo/câu hỏi này; chạy một lượt `CERTUS_LLM_MODE=record` để sinh, hoặc đặt CERTUS_LLM_MODE=live kèm khoá API"
+  ]
+}

@@ -89,22 +89,33 @@ class PersonaStore:
     def record_lesson(self, user_id: str, project_id: str, lesson: str) -> None:
         """Ghi một bài học rút ra được trong lúc phân tích."""
         self.db.execute(
-            "INSERT INTO lessons (user_id, lesson, created_at) VALUES (?, ?, ?)",
-            (user_id, lesson, _now()),
+            # project_id phải được GHI, không chỉ được nhận. Bài học rút ra ở
+            # project A xuất hiện trong prompt của project B là rò rỉ dữ liệu
+            # giữa hai khách hàng — ở bản SaaS đây là sự cố phải công bố.
+            "INSERT INTO lessons (user_id, project_id, lesson, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (user_id, project_id, lesson, _now()),
         )
         self.db.commit()
 
-    def lessons_for(self, user_id: str, limit: int = 10) -> list[str]:
-        """Trả về bài học đã rút ra cho người dùng này."""
+    def lessons_for(
+        self, user_id: str, project_id: str | None = None, limit: int = 10
+    ) -> list[str]:
+        """Bài học của người này TRONG project này.
+
+        `project_id` không có giá trị mặc định nào an toàn ngoài việc lọc:
+        bỏ trống nghĩa là mọi bài học của mọi project đổ chung vào prompt.
+        """
         rows = self.db.execute(
-            "SELECT lesson FROM lessons WHERE user_id = ? ORDER BY id DESC LIMIT ?",
-            (user_id, limit),
+            "SELECT lesson FROM lessons WHERE user_id = ? AND project_id IS ? "
+            "ORDER BY id DESC LIMIT ?",
+            (user_id, project_id, limit),
         ).fetchall()
         return [row["lesson"] for row in rows]
 
     # --- khối chữ cho prompt ---------------------------------------------
 
-    def persona_block(self, user_id: str) -> str:
+    def persona_block(self, user_id: str, project_id: str | None = None) -> str:
         """Dựng khối chữ nhét vào prompt. Không có gì để nói ⇒ chuỗi rỗng.
 
         Trả rỗng thay vì một câu kiểu "chưa có dữ liệu cá nhân hoá" là có chủ ý:
@@ -112,7 +123,7 @@ class PersonaStore:
         giải, và nó thường diễn giải thành lời xin lỗi trong câu trả lời.
         """
         habits = self.habits_for(user_id)
-        lessons = self.lessons_for(user_id)
+        lessons = self.lessons_for(user_id, project_id)
         if not habits and not lessons:
             return ""
         lines: list[str] = []

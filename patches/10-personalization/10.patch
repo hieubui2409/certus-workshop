@@ -1,0 +1,20 @@
+# patch 10 — Personalization
+# lỗ hổng: 10-personalization
+# vì sao: Tham số nhận vào rồi vứt đi. Cột đã có sẵn trong schema, chỉ là không ai ghi vào.
+--- a/src/backend/app/agent/persona.py
++++ b/src/backend/app/agent/persona.py
+@@ -89,8 +89,12 @@
+     def record_lesson(self, user_id: str, project_id: str, lesson: str) -> None:
+         """Ghi một bài học rút ra được trong lúc phân tích."""
+         self.db.execute(
+-            "INSERT INTO lessons (user_id, lesson, created_at) VALUES (?, ?, ?)",
+-            (user_id, lesson, _now()),
++            # project_id phải được GHI, không chỉ được nhận. Bài học rút ra ở
++            # project A xuất hiện trong prompt của project B là rò rỉ dữ liệu
++            # giữa hai khách hàng — ở bản SaaS đây là sự cố phải công bố.
++            "INSERT INTO lessons (user_id, project_id, lesson, created_at) "
++            "VALUES (?, ?, ?, ?)",
++            (user_id, project_id, lesson, _now()),
+         )
+         self.db.commit()
+ 

@@ -132,14 +132,16 @@ def test_search_is_deterministic_between_two_runs(tmp_path):
 def test_build_context_carries_citations(tmp_path):
     kb = KnowledgeBase.load(_kb(tmp_path))
     context = build_context("tiêu chí không có nội dung áp dụng", kb=kb, k=2)
-    assert "[standards/wcag.md:" in context
+    assert "[standards/wcag.md:" in context["text"]
 
 
 def test_build_context_respects_the_configured_ceiling(tmp_path):
     kb = KnowledgeBase.load(_kb(tmp_path))
     cfg = Settings(context_max_chars=120)
     context = build_context("mẫu số coverage tiêu chí", kb=kb, k=6, settings=cfg)
-    assert len(context) <= 120
+    assert len(context["text"]) <= 120
+    # Và phần bị bỏ phải ĐẾM ĐƯỢC, không được biến mất trong im lặng.
+    assert isinstance(context["dropped_chunks"], list)
 
 
 def test_build_context_returns_empty_string_when_kb_has_no_hit(tmp_path):

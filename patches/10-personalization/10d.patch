@@ -1,0 +1,14 @@
+# patch 10d — Personalization (chỗ gọi trong persona_block)
+# lỗ hổng: 10-personalization
+# vì sao: 
+--- a/src/backend/app/agent/persona.py
++++ b/src/backend/app/agent/persona.py
+@@ -123,7 +123,7 @@
+         giải, và nó thường diễn giải thành lời xin lỗi trong câu trả lời.
+         """
+         habits = self.habits_for(user_id)
+-        lessons = self.lessons_for(user_id)
++        lessons = self.lessons_for(user_id, project_id)
+         if not habits and not lessons:
+             return ""
+         lines: list[str] = []

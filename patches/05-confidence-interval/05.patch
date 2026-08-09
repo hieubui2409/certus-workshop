@@ -1,0 +1,21 @@
+# patch 05 — Confidence score vs khoảng tin cậy
+# lỗ hổng: 05-confidence-interval
+# vì sao: Interval đã được tính rồi bị vứt ở tầng serialize. Đây là chỗ một phép đo đúng biến thành một con số sai, và nó xảy ra sau khi mọi test toán đã xanh.
+--- a/src/backend/app/api/schemas.py
++++ b/src/backend/app/api/schemas.py
+@@ -157,9 +157,12 @@
+     cells_na: int = 0
+     cells_unknown: int = 0
+ 
+-    # Con số duy nhất được phép đứng một mình, vì nó là điểm tổng hợp mà
+-    # người dùng chờ đợi thấy ngay ở đầu trang.
+-    confidence: float = 0.0
++    # KHÔNG có trường `confidence` trần. Một số 0..1 tên là 'độ tin cậy'
++    # đứng cạnh một số 0..1 tên là 'độ phủ' sẽ được đọc như hai phép đo cùng
++    # loại, trong khi cái thứ nhất chỉ là p̂ viết lại. 3/3 hiện 100%/100%
++    # trong khi Wilson95 chỉ đảm bảo ≥ 43,9%.
++    #
++    # Muốn biết chắc tới đâu thì đọc `grid.interval` — nó có k, n và biên.
+ 
+ 
+ class ClaimOut(BaseModel):

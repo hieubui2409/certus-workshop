@@ -1,0 +1,66 @@
+[
+  {
+    "artifact": "pytest-full.txt",
+    "command": "/home/hieubt15/Documents/ai-product-design-workshop/src/backend/.venv/bin/python -m pytest tests/",
+    "exit_code": 0,
+    "sha256": "818ebf79f42847c4d1e4acdb3e32d4812739f191aaf1400cc4359ffad54a9ace",
+    "bytes": 981,
+    "ts": "2026-08-06T06:16:00+00:00"
+  },
+  {
+    "artifact": "eval-baseline.txt",
+    "command": "/home/hieubt15/Documents/ai-product-design-workshop/src/backend/.venv/bin/python evals/run.py --json evidences/eval-baseline.json",
+    "exit_code": 0,
+    "sha256": "84ddb0d40fe3b128c5ce17be7c1bca207752702edfe9194e62d36c17afec5be6",
+    "bytes": 1818,
+    "ts": "2026-08-06T06:16:00+00:00"
+  },
+  {
+    "artifact": "eval-baseline.json",
+    "command": "/home/hieubt15/Documents/ai-product-design-workshop/src/backend/.venv/bin/python evals/run.py --json evidences/eval-baseline.json",
+    "exit_code": 0,
+    "sha256": "ca799195a8e2f9d1253986ef92a358a61a7432bd976603c0e78009d6af1da51c",
+    "bytes": 4375,
+    "ts": "2026-08-06T06:16:00+00:00"
+  },
+  {
+    "artifact": "positive-control.txt",
+    "command": "/home/hieubt15/Documents/ai-product-design-workshop/src/backend/.venv/bin/python evals/run.py --positive-control",
+    "exit_code": 0,
+    "sha256": "e22bce544cb34d554a7d4d0eb901a7ab9ef9518c4d2e6dc3818e8107273ad964",
+    "bytes": 62,
+    "ts": "2026-08-06T06:16:00+00:00"
+  },
+  {
+    "artifact": "analyze-shopcart.json",
+    "command": "/home/hieubt15/Documents/ai-product-design-workshop/src/backend/.venv/bin/python -m certus analyze fixtures/targets/shopcart --json",
+    "exit_code": 0,
+    "sha256": "51041df4a4c10b602ed11f263833c5888df71657a4828585e169bd01bae41500",
+    "bytes": 27769,
+    "ts": "2026-08-06T06:16:03+00:00"
+  },
+  {
+    "artifact": "analyze-ledger.json",
+    "command": "/home/hieubt15/Documents/ai-product-design-workshop/src/backend/.venv/bin/python -m certus analyze fixtures/targets/ledger --json",
+    "exit_code": 0,
+    "sha256": "13a0be8b2728e571c56062dac7b0fd13b76298a6b7009cd8903572be27e66273",
+    "bytes": 4745,
+    "ts": "2026-08-06T06:16:06+00:00"
+  },
+  {
+    "artifact": "analyze-payments.json",
+    "command": "/home/hieubt15/Documents/ai-product-design-workshop/src/backend/.venv/bin/python -m certus analyze fixtures/targets/payments --json",
+    "exit_code": 0,
+    "sha256": "516fe4b95cb79a50cd9586f840446c5529cb8f2335e43af23e3402127173fbed",
+    "bytes": 5175,
+    "ts": "2026-08-06T06:16:09+00:00"
+  },
+  {
+    "artifact": "ledger.jsonl",
+    "command": "app.ledger.evidence (append-only)",
+    "exit_code": 0,
+    "sha256": "0a4d5e28eeb5e489ab536b5acda851dfc6c32dbd270d19cf856ab5edab2e008d",
+    "bytes": 71454,
+    "ts": "2026-08-06T06:16:09+00:00"
+  }
+]

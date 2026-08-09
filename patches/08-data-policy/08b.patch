@@ -1,0 +1,14 @@
+# patch 08b — Data policy (import còn thiếu)
+# lỗ hổng: 08-data-policy
+# vì sao: Bản vá 08 raise ConfigError nên phải import nó.
+--- a/src/backend/app/policy/redaction.py
++++ b/src/backend/app/policy/redaction.py
+@@ -18,6 +18,8 @@
+ 
+ import re
+ from dataclasses import dataclass
++
++from app.contracts.errors import ConfigError
+ 
+ #: Danh sách chặn theo tên tệp. Đây là HẰNG SỐ CODE, không phải giá trị mặc
+ #: định của config: nó là sàn của chính sách, không phải gợi ý khởi điểm.

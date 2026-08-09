@@ -26,3 +26,21 @@ npm run dev
 
 Xem `docs/setup.md` để biết chi tiết, và `docs/research-notes/` cho phần lý thuyết
 nền (khoảng tin cậy Wilson · grid coverage · chuỗi cổng QA).
+
+## Tài liệu sau buổi học
+
+Buổi workshop chạy trên một bản CERTUS được **cài sẵn lỗ hổng** để tìm. Bản mã
+trong repo này là bản **đã vá** — nó khác với bản anh/chị đã dùng trên lớp.
+
+| thư mục | nội dung |
+|---|---|
+| `patches/` | từng lỗ hổng một, dưới dạng diff — đọc để thấy chính xác đã sửa gì |
+| `docs/solutions/` | nguồn sinh ra các diff đó, kèm `DETAILS.md` giải thích từng ca |
+| `evidences/`, `reports/` | số liệu nghiệm thu thật: ledger, phân tích, baseline |
+| `docs/instructor/live-runbook.md` | kịch bản buổi live, kèm ảnh từng bước |
+| `docs/research-notes/` | phần lý thuyết nền (Wilson · grid coverage · chuỗi cổng QA) |
+
+**Lưu ý:** các tệp trong `patches/` neo vào bản **chưa vá**, nên đừng chạy
+`git apply` hay `patches/apply-all.sh` trên cây này — nó sẽ báo lỗi vì các sửa
+đổi đó *đã nằm sẵn* trong mã. Hãy mở tệp `.patch` ra đọc: nội dung diff tự đủ
+nghĩa (dòng `-` là mã có lỗi cũ, dòng `+` là mã đã sửa).

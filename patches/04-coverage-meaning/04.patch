@@ -1,0 +1,19 @@
+# patch 04 — Coverage & con số nói gì
+# lỗ hổng: 04-coverage-meaning
+# vì sao: Hai con số trả lời hai câu hỏi khác nhau. Gộp lại thì mất câu hỏi thứ hai, mà câu thứ hai mới là cái cổng thật đọc.
+--- a/src/backend/app/core/grid/rollup.py
++++ b/src/backend/app/core/grid/rollup.py
+@@ -224,7 +224,12 @@
+     return verdicts
+ 
+ 
+-def overall_coverage_score(
++def _removed_overall_coverage_score(  # noqa: N802 — giữ tên để lịch sử đọc được
++    # ĐÃ GỠ. risk_weighted_coverage là số CHẨN ĐOÁN, min_per_zone là CỔNG.
++    # Trộn chúng bằng 0.7/0.3 cho phép một zone tốt che một zone tệ ở chỗ
++    # hoàn toàn khác — và không ai đọc con số gộp lại biết điều đó vừa xảy ra.
++    # Trọng số 0.7/0.3 cũng không đến từ đâu cả; nó chỉ trông có thẩm quyền.
++
+     cells: Iterable[Cell], band_scores: Mapping[str, float]
+ ) -> float:
+     """Điểm tổng hợp để hiển thị trên dashboard."""

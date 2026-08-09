@@ -1,0 +1,29 @@
+# patch 06b — Evidence-based (hàm suy nhãn)
+# lỗ hổng: 06-evidence-probe-first
+# vì sao: Nhãn phải được SUY RA, không được nhận vào.
+--- a/src/backend/app/agent/claims.py
++++ b/src/backend/app/agent/claims.py
+@@ -101,6 +101,23 @@
+         ) from exc
+ 
+ 
++def _label_from_evidence(item: Mapping[str, Any]) -> Label:
++    """Suy nhãn từ BẰNG CHỨNG, không đọc trường `label` mô hình tự ghi.
++
++    Đây là chỗ luật 'only a tool promotes a claim' được cưỡng chế. Mô hình
++    vẫn được đề xuất nhãn — đề xuất đó chỉ không có hiệu lực.
++    """
++    has_anchor = bool(item.get("anchors"))
++    has_evidence = bool(item.get("evidence_ids"))
++    if has_anchor and has_evidence:
++        return Label.OBSERVED
++    if has_evidence:
++        return Label.DERIVED
++    if item.get("mechanism"):
++        return Label.PRIOR
++    return Label.ASSUMED
++
++
+ def parse_claims(raw: Mapping[str, Any]) -> list[Claim]:
+     """Dựng danh sách `Claim` từ JSON model trả về."""
+     items = raw.get("claims")

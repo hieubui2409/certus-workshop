@@ -33,11 +33,10 @@ binary_extensions:
   - .pyc
   - .sqlite3
 
-# Bỏ .env khỏi blocklist để phân tích được file cấu hình mẫu (.env.example)
-# (ii)  Suy ra từ: repo mẫu payments/ có .env.example là một phần hồ sơ thiết
-#       kế — không đọc được nó thì gate requirements mất mẫu số.
-# (iii) Xem lại khi: repo mẫu đổi cách khai báo cấu hình.
-blocklist_override: ["*.pem", "*_secret*", "credentials*", "*.key"]
+# blocklist_override ĐÃ GỠ. Lý do cũ nghe hoàn toàn hợp lý — và đó chính là
+# lý do nó sống sót qua review: để đọc được `.env.example`, nó gỡ mẫu `*.env`
+# và kéo theo `.env` THẬT vào prompt. Ngoại lệ cho một tệp cụ thể thì khai ở
+# allowlist, nơi bắt phải nêu lý do cho từng tệp một.
 
 # Mẫu chặn riêng của dự án, cộng thêm vào danh sách trên.
 # (ii)  Suy ra từ: quy ước đặt tên tệp nội bộ (id_rsa, *.p12, *.keystore).

@@ -1,0 +1,18 @@
+# patch 11-2b — Observability (mặc định cho trace_id)
+# lỗ hổng: 11-observability
+# vì sao: Đo được: sau bản vá 11-2, `test_setup_logging_ghi_ra_tep` cho tệp log RỖNG. Bản vá làm đúng ý định nhưng lặng lẽ vứt mọi dòng log không nằm trong trace.
+--- a/src/backend/app/observability/logging.py
++++ b/src/backend/app/observability/logging.py
+@@ -44,6 +44,12 @@
+     global _configured
+     if _configured and not force:
+         return
++
++    # `{extra[trace_id]}` ném KeyError với mọi dòng log phát ra NGOÀI một
++    # trace context, và loguru nuốt lỗi đó — dòng log biến mất không dấu vết.
++    # Một trường bắt buộc không có giá trị mặc định là cách chắc chắn nhất
++    # để mất đúng những dòng log ở rìa, chỗ hay hỏng nhất.
++    logger.configure(extra={"trace_id": "-"})
+ 
+     settings.log_dir.mkdir(parents=True, exist_ok=True)
+     for sink_id in _own_sinks:

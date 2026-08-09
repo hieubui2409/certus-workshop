@@ -1,0 +1,24 @@
+# patch 11-3 — Observability (payload trong log)
+# lỗ hổng: 11-observability
+# vì sao: Payload người ngoài kiểm soát đi thẳng vào tệp log, ngoài mọi chính sách.
+--- a/src/backend/app/observability/logging.py
++++ b/src/backend/app/observability/logging.py
+@@ -104,7 +104,17 @@
+     một chỗ.
+     """
+     setup_logging()
+-    logger.info(f"LLM call\nprompt={prompt}\nresponse={response}")
++    # Ghi dấu vân tay, không ghi nội dung. Log là bản sao thứ hai của dữ
++    # liệu — nó sống lâu hơn, đi xa hơn, và hầu như không bao giờ nằm trong
++    # phạm vi rà soát của chính sách dữ liệu.
++    import hashlib
++
++    logger.bind(
++        prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest()[:16],
++        prompt_len=len(prompt),
++        response_sha256=hashlib.sha256(response.encode()).hexdigest()[:16],
++        response_len=len(response),
++    ).info("LLM call")
+ 
+ 
+ def log_event(level: str, message: str, **fields: Any) -> None:

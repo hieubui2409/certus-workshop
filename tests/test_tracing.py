@@ -197,7 +197,9 @@ def test_trace_context_gan_trace_id_vao_extra() -> None:
         logger.remove(sink_id)
 
     assert seen[0].get("trace_id") == "t-log"
-    assert "trace_id" not in seen[1]
+    # Ngoài trace vẫn CÓ khoá, mang giá trị rỗng quy ước. Thiếu hẳn khoá
+    # thì `{extra[trace_id]}` ném KeyError và loguru nuốt mất dòng log.
+    assert seen[1]["trace_id"] == "-"
 
 
 def test_log_event_mang_theo_truong_co_cau_truc() -> None:

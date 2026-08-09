@@ -303,11 +303,17 @@ def test_cassette_phu_cau_hoi_ui_khong_bi_skip_o_repo_instructor() -> None:
     mục, hay một lần dọn dẹp là nó im lặng tắt luôn ở repo instructor, và không
     có gì kêu.
 
-    Ở repo INSTRUCTOR (có `scripts/`, có `patches/`) thì nó BẮT BUỘC chạy.
+    Ở repo INSTRUCTOR (có `scripts/`, có `evals/golden/`) thì nó BẮT BUỘC chạy.
+
+    Mốc nhận dạng là `evals/golden/cases.json`, KHÔNG phải `patches/`: bản phát
+    SAU-LỚP (`build_student_repo.py --post-workshop`) có mang theo `patches/`
+    làm tài liệu đối chiếu, nên `patches/` không còn phân biệt được hai cây.
+    `evals/golden/` thì không bao giờ vào bản phát ở bất kỳ chế độ nào — nó
+    chính là baseline chấm điểm.
     """
-    la_instructor = (REPO_ROOT / "patches").is_dir()
+    la_instructor = (REPO_ROOT / "evals" / "golden" / "cases.json").is_file()
     if not la_instructor:
-        pytest.skip("bản phát cho sinh viên — không có patches/, không cần chốt này")
+        pytest.skip("bản phát cho sinh viên — không có evals/golden/, không cần chốt này")
     assert _RECORDER.is_file(), (
         f"repo instructor phải có {_RECORDER.relative_to(REPO_ROOT)} — thiếu nó thì "
         "test đồng bộ hai danh sách câu hỏi bị skip im lặng, và cassette lại trôi"

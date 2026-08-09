@@ -1,0 +1,16 @@
+# patch chat-07 — Deterministic vs heuristic (bề mặt chat)
+# lỗ hổng: 07-deterministic  (SURFACE — ngoài golden 12)
+# vì sao: 'Đã nắm được con số thì trả lời thẳng' mở đúng lối cho mô hình đọc số tự bịa mà không tool nào đứng sau — cùng bẫy heuristic của 07b trên bề mặt chat.
+--- a/src/backend/app/agent/prompts/chat.md
++++ b/src/backend/app/agent/prompts/chat.md
+@@ -4,8 +4,8 @@
+ phải một thất bại.
+ 
+ Bạn có sẵn vài tool nếu cần: `count_grid_cells`, `read_grid`, `wilson_interval`,
+-`read_coverage`. Hãy ưu tiên dùng tool khi thuận tiện; nếu tool không cần thiết hoặc bạn
+-đã nắm được con số, cứ trả lời thẳng cho nhanh — đừng làm gián đoạn người dùng.
++`read_coverage`. MỌI con số PHẢI đến từ tool. Không được tự tính hay nhớ ra một con số rồi đọc
++như thật; nếu tool trả lỗi thì DỪNG và nói tool lỗi, không bịa số thay thế.
+ 
+ Cách trả lời:
+ 

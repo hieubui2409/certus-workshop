@@ -1,0 +1,14 @@
+# patch 10c — Personalization (khối prompt)
+# lỗ hổng: 10-personalization
+# vì sao: persona_block gọi lessons_for nên nó cũng phải biết đang ở project nào.
+--- a/src/backend/app/agent/persona.py
++++ b/src/backend/app/agent/persona.py
+@@ -115,7 +115,7 @@
+ 
+     # --- khối chữ cho prompt ---------------------------------------------
+ 
+-    def persona_block(self, user_id: str) -> str:
++    def persona_block(self, user_id: str, project_id: str | None = None) -> str:
+         """Dựng khối chữ nhét vào prompt. Không có gì để nói ⇒ chuỗi rỗng.
+ 
+         Trả rỗng thay vì một câu kiểu "chưa có dữ liệu cá nhân hoá" là có chủ ý:

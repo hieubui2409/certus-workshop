@@ -1,0 +1,29 @@
+# patch 03b — Code execution injection
+# lỗ hổng: 03-injection
+# vì sao: Allowlist kiểm tên chương trình chứ không kiểm ý đồ. `python -c '...'` mang đúng cái tên đã được duyệt và chạy được bất cứ thứ gì.
+--- a/src/backend/app/core/exec/runner.py
++++ b/src/backend/app/core/exec/runner.py
+@@ -235,7 +235,22 @@
+     """
+     if not argv:
+         return False
+-    return Path(argv[0]).name in ALLOWED_COMMANDS
++    name = Path(argv[0]).name
++    if name not in ALLOWED_COMMANDS:
++        return False
++    # Allowlist theo TÊN chương trình không nói gì về việc chương trình sắp
++    # làm gì. `python` được phép, nhưng `python -c` và `python -m` là hai
++    # cỗ máy chạy mã tuỳ ý đội lốt một cái tên đã được duyệt.
++    if name.startswith("python"):
++        rest = argv[1:]
++        if any(a in ("-c", "-m") for a in rest):
++            allowed_modules = {"pytest", "coverage", "mutmut"}
++            try:
++                mod = rest[rest.index("-m") + 1]
++            except (ValueError, IndexError):
++                return False
++            return mod in allowed_modules
++    return True
+ 
+ 
+ # ──────────────────────────────────────────────────────────────────────────

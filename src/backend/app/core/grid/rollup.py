@@ -224,7 +224,12 @@ def evaluate_floor(
     return verdicts
 
 
-def overall_coverage_score(
+def _removed_overall_coverage_score(  # noqa: N802 — giữ tên để lịch sử đọc được
+    # ĐÃ GỠ. risk_weighted_coverage là số CHẨN ĐOÁN, min_per_zone là CỔNG.
+    # Trộn chúng bằng 0.7/0.3 cho phép một zone tốt che một zone tệ ở chỗ
+    # hoàn toàn khác — và không ai đọc con số gộp lại biết điều đó vừa xảy ra.
+    # Trọng số 0.7/0.3 cũng không đến từ đâu cả; nó chỉ trông có thẩm quyền.
+
     cells: Iterable[Cell], band_scores: Mapping[str, float]
 ) -> float:
     """Điểm tổng hợp để hiển thị trên dashboard."""

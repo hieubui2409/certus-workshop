@@ -62,8 +62,11 @@ def test_parse_builds_claims_with_id_text_and_label():
 
     assert [c.id for c in claims] == ["c1", "c2"]
     assert claims[0].text == "Bộ kiểm chạm 412 dòng."
-    assert claims[0].label is Label.OBSERVED
-    assert claims[1].label is Label.DERIVED
+    # Cả hai claim đều KHÔNG có neo lẫn evidence, nên dù model tự ghi
+    # OBSERVED và DERIVED thì nhãn có hiệu lực vẫn là ASSUMED. Bản cũ của
+    # test này khẳng định điều ngược lại — nó ghim đúng lỗ hổng.
+    assert claims[0].label is Label.ASSUMED
+    assert claims[1].label is Label.ASSUMED
 
 
 def test_parse_keeps_evidence_ids_and_anchors():

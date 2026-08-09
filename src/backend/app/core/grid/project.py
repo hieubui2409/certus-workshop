@@ -111,11 +111,13 @@ def project_cell(
             )
         return cell(Band.NA, [f"constraint:{constraint.get('id')}"])
 
-    # Phân tích tĩnh của model có thể thấy một ô bất khả thi mà constraint chưa
-    # kịp khai (ví dụ hai giá trị loại trừ nhau ngay trong chữ ký hàm). Ghi cờ
-    # riêng để soát lại được ở report.
+    # Đề xuất N/A của mô hình KHÔNG được tự động thành N/A. N/A nghĩa là ô này
+    # rời khỏi mẫu số, và mô hình đọc chính file đang bị chấm — để nó tự rút
+    # mình ra là để bên bị chấm làm rỗng tập chặn. Đề xuất chỉ được ghi lại
+    # để người xét duyệt xem, và ô vẫn nằm trong mẫu số cho tới khi có
+    # constraint được admit.
     if proposal and proposal.get("na_reason"):
-        return cell(Band.NA, ["na_from_analysis"])
+        return cell(Band.UNKNOWN, ["na_proposed_pending_review"])
 
     # ── hàng 1: outcome không phân giải được ⇒ KHÔNG BAO GIỜ pass ────────────
     # result.json thiếu/hỏng, nonce lệch: ta không biết probe đã chạy hay chưa,

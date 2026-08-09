@@ -1,0 +1,18 @@
+# patch T-project — [test] test đang ghim hành vi sai
+# lỗ hổng: 03-injection
+# vì sao: Test cũ khẳng định mô hình đặt được N/A — tức là ghim chính lỗ hổng.
+--- a/tests/test_project.py
++++ b/tests/test_project.py
+@@ -85,8 +85,10 @@
+     """Phân tích tĩnh thấy một ô không thể tồn tại thì ô đó rời khỏi mẫu số,
+     kèm cờ riêng để soát lại được ở report."""
+     cell = project(proposal={"na_reason": "hai giá trị loại trừ nhau trong chữ ký hàm"})
+-    assert cell.band is Band.NA
+-    assert cell.flags == ["na_from_analysis"]
++    # Đề xuất được GHI LẠI, không được THI HÀNH: ô vẫn nằm trong mẫu số cho
++    # tới khi có người duyệt. Bản cũ của test này ghim đúng hành vi sai.
++    assert cell.band is Band.UNKNOWN
++    assert cell.flags == ["na_proposed_pending_review"]
+ 
+ 
+ # ─────────────────────────── thứ tự nhánh ───────────────────────────

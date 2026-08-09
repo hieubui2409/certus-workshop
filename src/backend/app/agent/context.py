@@ -88,5 +88,11 @@ def build_upload_context(files: Mapping[str, str]) -> str:
     parts: list[str] = []
     for path in sorted(files):
         source = _clip(files[path])
-        parts.append(f"### {path}\n{source}")
+        # Rào lại và dán nhãn. Nội dung này do người ngoài viết; nó là DỮ
+        # LIỆU để phân tích, không phải mệnh lệnh để thi hành.
+        parts.append(
+            f"<untrusted_user_file path={path!r}>\n"
+            f"{source}\n"
+            f"</untrusted_user_file>"
+        )
     return "\n\n".join(parts)

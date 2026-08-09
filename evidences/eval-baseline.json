@@ -1,0 +1,102 @@
+{
+  "passed": 0,
+  "total": 12,
+  "results": [
+    {
+      "case_id": "01_confabulation",
+      "concept": "Anti-confabulation",
+      "tier": "A",
+      "verdict": "fail",
+      "reason": "prompt còn câu mời bịa: 'kinh nghiệm của bạn' — prompt cho phép mô hình lấp khoảng trống bằng trí nhớ của nó thay vì nói không biết",
+      "probes": []
+    },
+    {
+      "case_id": "02_truncation",
+      "concept": "Anti-hallucination",
+      "tier": "A",
+      "verdict": "fail",
+      "reason": "build_context trả về str trần — không có chỗ nào báo đã bỏ chunk nào. Người đọc thấy citation đúng và tưởng đã đọc trọn văn bản",
+      "probes": []
+    },
+    {
+      "case_id": "03a_prompt_injection",
+      "concept": "LLM injection — prompt injection",
+      "tier": "B",
+      "verdict": "fail",
+      "reason": "nội dung người dùng upload được ghép thẳng vào prompt, không rào, không nhãn — comment trong file của họ điều khiển được phán quyết",
+      "probes": []
+    },
+    {
+      "case_id": "03b_exec_injection",
+      "concept": "LLM injection — code execution",
+      "tier": "B",
+      "verdict": "fail",
+      "reason": "argv ['python', '-c', 'import os'] đi lọt allowlist. Allowlist đang kiểm TÊN chương trình chứ không kiểm thứ chương trình sắp làm",
+      "probes": []
+    },
+    {
+      "case_id": "04_rollup_merge",
+      "concept": "Coverage & con số nói gì",
+      "tier": "A",
+      "verdict": "fail",
+      "reason": "rollup lộ ra overall_coverage_score() — nó trộn risk_weighted_coverage (chẩn đoán) với min_per_zone (cổng thật). Một trung bình cho phép một zone tốt che một zone tệ ở chỗ hoàn toàn khác",
+      "probes": []
+    },
+    {
+      "case_id": "05_confidence_field",
+      "concept": "Confidence score vs khoảng tin cậy",
+      "tier": "A",
+      "verdict": "fail",
+      "reason": "schema có trường `confidence: float` trần. p̂ được serialize còn interval bị bỏ: 3/3 hiện 100% trong khi Wilson95 chỉ đảm bảo ≥ 43,9%",
+      "probes": []
+    },
+    {
+      "case_id": "06_label_from_tool",
+      "concept": "Evidence-based vs probe-first",
+      "tier": "B",
+      "verdict": "fail",
+      "reason": "claim giữ nhãn OBSERVED dù evidence rỗng — parse_claims tin trường `label` do LLM tự ghi. Chỉ tool mới được thăng hạng một claim",
+      "probes": []
+    },
+    {
+      "case_id": "07_deterministic",
+      "concept": "Deterministic vs heuristic",
+      "tier": "A",
+      "verdict": "fail",
+      "reason": "prompt còn câu 'bạn có thể tự tính': khi tool lỗi, mô hình được phép tự tính. Mẫu số sai kéo theo mọi tỉ lệ phía sau sai, im lặng",
+      "probes": []
+    },
+    {
+      "case_id": "08_data_policy",
+      "concept": "Enterprise & data policy",
+      "tier": "B",
+      "verdict": "fail",
+      "reason": "override làm mất '*.env' khỏi danh sách chặn — config THAY cả danh mục thay vì THÊM vào, nên .env thật lọt vào prompt. Danh mục chỉ được THÊM, không được BỚT",
+      "probes": []
+    },
+    {
+      "case_id": "09_authorization",
+      "concept": "Permission & authorization",
+      "tier": "B",
+      "verdict": "fail",
+      "reason": "role analyst — chính bên đang bị chấm — có 'config:write'. Nó sửa được zones.yaml, hạ blocking_w là làm rỗng tập chặn và mọi gate pass",
+      "probes": []
+    },
+    {
+      "case_id": "10_persona_leak",
+      "concept": "Personalization",
+      "tier": "B",
+      "verdict": "fail",
+      "reason": "lessons_for(self, user_id: 'str', limit: 'int' = 10) -> 'list[str]' không nhận project_id — không có cách nào hỏi 'bài học của project nào'. Mọi bài học của mọi project đổ chung vào prompt; ở bản SaaS đây là sự cố bảo mật phải công bố",
+      "probes": []
+    },
+    {
+      "case_id": "11_tracing",
+      "concept": "Observability & tracing",
+      "tier": "A",
+      "verdict": "fail",
+      "reason": "một lần analyze sinh ra 2 trace_id khác nhau (kỳ vọng 1). Span của lời gọi LLM tự sinh trace mới nên cây span đứt đúng chỗ đắt nhất",
+      "probes": []
+    }
+  ]
+}

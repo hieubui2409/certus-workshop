@@ -1,0 +1,28 @@
+# patch 10b — Personalization (vế đọc)
+# lỗ hổng: 10-personalization
+# vì sao: Ghi đúng project_id mà đọc vẫn không lọc thì bài học vẫn rò rỉ y như cũ.
+--- a/src/backend/app/agent/persona.py
++++ b/src/backend/app/agent/persona.py
+@@ -98,11 +98,18 @@
+         )
+         self.db.commit()
+ 
+-    def lessons_for(self, user_id: str, limit: int = 10) -> list[str]:
+-        """Trả về bài học đã rút ra cho người dùng này."""
++    def lessons_for(
++        self, user_id: str, project_id: str | None = None, limit: int = 10
++    ) -> list[str]:
++        """Bài học của người này TRONG project này.
++
++        `project_id` không có giá trị mặc định nào an toàn ngoài việc lọc:
++        bỏ trống nghĩa là mọi bài học của mọi project đổ chung vào prompt.
++        """
+         rows = self.db.execute(
+-            "SELECT lesson FROM lessons WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+-            (user_id, limit),
++            "SELECT lesson FROM lessons WHERE user_id = ? AND project_id IS ? "
++            "ORDER BY id DESC LIMIT ?",
++            (user_id, project_id, limit),
+         ).fetchall()
+         return [row["lesson"] for row in rows]
+ 

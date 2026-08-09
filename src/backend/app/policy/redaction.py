@@ -19,6 +19,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from app.contracts.errors import ConfigError
+
 #: Danh sách chặn theo tên tệp. Đây là HẰNG SỐ CODE, không phải giá trị mặc
 #: định của config: nó là sàn của chính sách, không phải gợi ý khởi điểm.
 DEFAULT_BLOCKLIST = ["*.env", "*.pem", "*_secret*", "credentials*", "*.key"]
@@ -89,9 +91,17 @@ def build_blocklist(cfg: dict) -> list[str]:
     không hợp với cách tổ chức tệp của dự án, và `blocklist_extra` cho mẫu
     riêng của dự án. Cả hai đều đi kèm ba vế trong `config/data-policy.yaml`.
     """
+    # Danh mục chỉ được THÊM, không được BỚT. `blocklist_override` bị bỏ
+    # hẳn: một dự án gỡ được `*.env` khỏi chính sách nghĩa là chính sách
+    # không còn là chính sách. Cần ngoại lệ cho một tệp cụ thể thì dùng
+    # allowlist theo tên nguyên văn — nó bắt phải nêu lý do cho từng tệp.
     patterns = list(DEFAULT_BLOCKLIST)
     if cfg.get("blocklist_override"):
-        patterns = list(cfg["blocklist_override"])
+        raise ConfigError(
+            "blocklist_override",
+            "danh mục chặn chỉ được THÊM. Dùng blocklist_extra để thêm mẫu, "
+            "hoặc allowlist (có lý do từng tệp) để mở ngoại lệ.",
+        )
     return patterns + list(cfg.get("blocklist_extra", []))
 
 

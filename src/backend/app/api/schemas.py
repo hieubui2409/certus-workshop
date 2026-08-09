@@ -212,9 +212,12 @@ class CoverageOut(BaseModel):
     cells_na: int = 0
     cells_unknown: int = 0
 
-    # Con số duy nhất được phép đứng một mình, vì nó là điểm tổng hợp mà
-    # người dùng chờ đợi thấy ngay ở đầu trang.
-    confidence: float = 0.0
+    # KHÔNG có trường `confidence` trần. Một số 0..1 tên là 'độ tin cậy'
+    # đứng cạnh một số 0..1 tên là 'độ phủ' sẽ được đọc như hai phép đo cùng
+    # loại, trong khi cái thứ nhất chỉ là p̂ viết lại. 3/3 hiện 100%/100%
+    # trong khi Wilson95 chỉ đảm bảo ≥ 43,9%.
+    #
+    # Muốn biết chắc tới đâu thì đọc `grid.interval` — nó có k, n và biên.
 
 
 class ClaimOut(BaseModel):

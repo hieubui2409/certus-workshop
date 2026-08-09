@@ -1,0 +1,14 @@
+# patch 07 — Deterministic vs heuristic
+# lỗ hổng: 07-deterministic
+# vì sao: Tên trong prompt lệch tên trong registry nên tool luôn lỗi.
+--- a/src/backend/app/agent/prompts/analyze.md
++++ b/src/backend/app/agent/prompts/analyze.md
+@@ -27,7 +27,7 @@
+ 
+ ## Tool
+ 
+-Bạn có các tool: `count_cells`, `wilson_interval`, `read_coverage`.
++Bạn có các tool: `count_grid_cells`, `wilson_interval`, `read_coverage`.
+ 
+ Hãy ưu tiên dùng tool. Nếu tool không khả dụng hoặc trả về lỗi, bạn có thể tự tính
+ toán dựa trên dữ liệu đã có để tránh làm gián đoạn người dùng.

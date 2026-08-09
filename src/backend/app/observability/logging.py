@@ -20,7 +20,11 @@ from loguru import logger
 from app.settings import settings
 
 #: Khuôn một dòng log. Giữ ở một chỗ để hai sink không trôi khỏi nhau.
-LOG_FORMAT = "{time} | {level} | {name}:{line} | {message}"
+# Có trace mà không nối được với log thì cả hai đều vô dụng: người đọc có
+# một cây span đẹp và một đống dòng log, không có cầu nào giữa chúng.
+LOG_FORMAT = (
+    "{time} | {level} | {extra[trace_id]} | {name}:{line} | {message}"
+)
 
 #: Rotation/retention: đủ để soi lại cả buổi workshop, không đủ để lấp đĩa.
 ROTATION = "10 MB"
@@ -40,6 +44,12 @@ def setup_logging(*, force: bool = False) -> None:
     global _configured
     if _configured and not force:
         return
+
+    # `{extra[trace_id]}` ném KeyError với mọi dòng log phát ra NGOÀI một
+    # trace context, và loguru nuốt lỗi đó — dòng log biến mất không dấu vết.
+    # Một trường bắt buộc không có giá trị mặc định là cách chắc chắn nhất
+    # để mất đúng những dòng log ở rìa, chỗ hay hỏng nhất.
+    logger.configure(extra={"trace_id": "-"})
 
     settings.log_dir.mkdir(parents=True, exist_ok=True)
     for sink_id in _own_sinks:
@@ -94,7 +104,17 @@ def log_llm_call(prompt: str, response: str) -> None:
     một chỗ.
     """
     setup_logging()
-    logger.info(f"LLM call\nprompt={prompt}\nresponse={response}")
+    # Ghi dấu vân tay, không ghi nội dung. Log là bản sao thứ hai của dữ
+    # liệu — nó sống lâu hơn, đi xa hơn, và hầu như không bao giờ nằm trong
+    # phạm vi rà soát của chính sách dữ liệu.
+    import hashlib
+
+    logger.bind(
+        prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest()[:16],
+        prompt_len=len(prompt),
+        response_sha256=hashlib.sha256(response.encode()).hexdigest()[:16],
+        response_len=len(response),
+    ).info("LLM call")
 
 
 def log_event(level: str, message: str, **fields: Any) -> None:

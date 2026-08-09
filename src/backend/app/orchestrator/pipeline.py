@@ -811,7 +811,6 @@ class Pipeline:
             cells_total=len(cells),
             cells_na=sum(1 for c in cells if c.band is Band.NA),
             cells_unknown=sum(1 for c in cells if c.band is Band.UNKNOWN),
-            confidence=grid_rate.point,
         )
 
         # ── gate: sàn grid per-zone — bước 8, CHẠY TRƯỚC bước diễn giải ─────

@@ -239,7 +239,22 @@ def _is_allowed(argv: list[str]) -> bool:
     """
     if not argv:
         return False
-    return Path(argv[0]).name in ALLOWED_COMMANDS
+    name = Path(argv[0]).name
+    if name not in ALLOWED_COMMANDS:
+        return False
+    # Allowlist theo TÊN chương trình không nói gì về việc chương trình sắp
+    # làm gì. `python` được phép, nhưng `python -c` và `python -m` là hai
+    # cỗ máy chạy mã tuỳ ý đội lốt một cái tên đã được duyệt.
+    if name.startswith("python"):
+        rest = argv[1:]
+        if any(a in ("-c", "-m") for a in rest):
+            allowed_modules = {"pytest", "coverage", "mutmut"}
+            try:
+                mod = rest[rest.index("-m") + 1]
+            except (ValueError, IndexError):
+                return False
+            return mod in allowed_modules
+    return True
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -287,6 +302,14 @@ def _child_env(
     # rưỡi mà log chỉ ra thành 2 lần xả. Người xem thấy im lặng rồi một cục —
     # đúng thứ mà việc stream sinh ra để tránh.
     env["PYTHONUNBUFFERED"] = "1"
+    # pytest LUÔN import conftest.py của repo đích, trước mọi test và trước
+    # mọi thứ ta kiểm được. Không có cờ nào tắt được điều đó — nên đừng cố
+    # ngăn nó chạy; hãy làm cho việc nó chạy không với tới được cái gì.
+    #
+    # HOME thật đi xuyên qua env_passthrough là chỗ payload ghi được vào
+    # thư mục nhà của người dùng. Trỏ HOME vào thư mục chạy tạm.
+    env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+    env["HOME"] = str(run_dir)
     return env
 
 

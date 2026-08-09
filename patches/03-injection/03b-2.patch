@@ -1,0 +1,20 @@
+# patch 03b-2 — Code execution injection (plugin autoload)
+# lỗ hổng: 03-injection
+# vì sao: Tắt autoload chỉ chặn plugin bên thứ ba, KHÔNG chặn conftest.py — đo được: marker vẫn sinh ra sau khi tắt. Cô lập môi trường mới là lớp chặn thật.
+--- a/src/backend/app/core/exec/runner.py
++++ b/src/backend/app/core/exec/runner.py
+@@ -302,6 +302,14 @@
+     # rưỡi mà log chỉ ra thành 2 lần xả. Người xem thấy im lặng rồi một cục —
+     # đúng thứ mà việc stream sinh ra để tránh.
+     env["PYTHONUNBUFFERED"] = "1"
++    # pytest LUÔN import conftest.py của repo đích, trước mọi test và trước
++    # mọi thứ ta kiểm được. Không có cờ nào tắt được điều đó — nên đừng cố
++    # ngăn nó chạy; hãy làm cho việc nó chạy không với tới được cái gì.
++    #
++    # HOME thật đi xuyên qua env_passthrough là chỗ payload ghi được vào
++    # thư mục nhà của người dùng. Trỏ HOME vào thư mục chạy tạm.
++    env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
++    env["HOME"] = str(run_dir)
+     return env
+ 
+ 

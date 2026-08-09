@@ -1,0 +1,205 @@
+{
+  "run_id": "a4fd30ad2d5c484eb8b621de56cf4eaf",
+  "trace_id": "a4fd30ad2d5c484eb8b621de56cf4eaf",
+  "target": "payments",
+  "coverage": {
+    "line": {
+      "name": "line_coverage",
+      "k": 122,
+      "n": 122,
+      "point": 1.0,
+      "interval": {
+        "lower": 0.969473821610987,
+        "upper": 1.0,
+        "conf": 0.95,
+        "method": "wilson",
+        "n": 122,
+        "k": 122,
+        "n_eff": null,
+        "route": null,
+        "saturated": true
+      },
+      "flags": [
+        "interval-saturated"
+      ]
+    },
+    "mutation": null,
+    "grid": {
+      "name": "grid_coverage",
+      "k": 0,
+      "n": 8,
+      "point": 0.0,
+      "interval": {
+        "lower": 0.0,
+        "upper": 0.32440756488388023,
+        "conf": 0.95,
+        "method": "wilson",
+        "n": 8,
+        "k": 0,
+        "n_eff": null,
+        "route": null,
+        "saturated": true
+      },
+      "flags": [
+        "n-too-small",
+        "interval-wide",
+        "interval-saturated"
+      ]
+    },
+    "risk_weighted": {
+      "value": 0.0,
+      "cells_total": 8,
+      "cells_scored": 8,
+      "cells_excluded_na": 0
+    },
+    "per_zone": [
+      {
+        "zone_id": "catch_all",
+        "weight": 0.2,
+        "score": 0.0,
+        "cells_total": 8,
+        "cells_scoreable": 8,
+        "min_cell_band": null
+      }
+    ],
+    "cells": [
+      {
+        "id": "cell:charge_status=pending|gateway_route=modern",
+        "axes": {
+          "charge_status": "pending",
+          "gateway_route": "modern"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:charge_status=succeeded|gateway_route=modern",
+        "axes": {
+          "charge_status": "succeeded",
+          "gateway_route": "modern"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:charge_status=refunded|gateway_route=modern",
+        "axes": {
+          "charge_status": "refunded",
+          "gateway_route": "modern"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:charge_status=partially_refunded|gateway_route=modern",
+        "axes": {
+          "charge_status": "partially_refunded",
+          "gateway_route": "modern"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:charge_status=partially_refunded|gateway_route=legacy",
+        "axes": {
+          "charge_status": "partially_refunded",
+          "gateway_route": "legacy"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:charge_status=refunded|gateway_route=legacy",
+        "axes": {
+          "charge_status": "refunded",
+          "gateway_route": "legacy"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:charge_status=succeeded|gateway_route=legacy",
+        "axes": {
+          "charge_status": "succeeded",
+          "gateway_route": "legacy"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:charge_status=pending|gateway_route=legacy",
+        "axes": {
+          "charge_status": "pending",
+          "gateway_route": "legacy"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      }
+    ],
+    "cells_total": 8,
+    "cells_na": 0,
+    "cells_unknown": 8,
+    "confidence": 0.0
+  },
+  "claims": [],
+  "gates": [],
+  "verdict": "inconclusive",
+  "files_sent_to_model": [
+    ".coverage",
+    ".env",
+    ".env.example",
+    ".gitignore",
+    ".pytest_cache/.gitignore",
+    ".pytest_cache/CACHEDIR.TAG",
+    ".pytest_cache/README.md",
+    ".pytest_cache/v/cache/nodeids",
+    ".pytest_cache/v/cache/stepwise",
+    ".pytest_cache/v/randomly_seed",
+    "README.md",
+    "payments/__init__.py",
+    "payments/config.py",
+    "payments/gateway.py",
+    "payments/legacy_gateway.py",
+    "pytest.ini",
+    "tests/conftest.py",
+    "tests/test_config.py",
+    "tests/test_gateway.py",
+    "tests/test_legacy_gateway.py"
+  ],
+  "warnings": [
+    "8 tệp bị giữ lại theo chính sách dữ liệu",
+    "chưa có cassette cho bước diễn giải ở repo/câu hỏi này; chạy một lượt `CERTUS_LLM_MODE=record` để sinh, hoặc đặt CERTUS_LLM_MODE=live kèm khoá API"
+  ]
+}

@@ -44,7 +44,9 @@ def test_blocklist_extra_duoc_cong_them() -> None:
 
 def test_blocklist_khong_bao_gio_rong() -> None:
     """Một danh sách chặn rỗng đọc y hệt một danh sách chặn không tồn tại."""
-    for cfg in ({}, {"blocklist_extra": []}, {"blocklist_override": ["*.pem"]}):
+    # `blocklist_override` không còn là một đầu vào hợp lệ — nó bị từ chối
+    # thẳng, nên nó thuộc về test khác chứ không phải test này.
+    for cfg in ({}, {"blocklist_extra": []}, {"blocklist_extra": ["*.pem"]}):
         assert build_blocklist(cfg), f"cfg={cfg} cho ra danh sách rỗng"
 
 

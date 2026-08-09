@@ -1,0 +1,24 @@
+# patch 08 — Enterprise & data policy
+# lỗ hổng: 08-data-policy
+# vì sao: Override THAY cả danh sách nên `.env` thật đi thẳng vào prompt. Comment trong data-policy.yaml nghe hoàn toàn hợp lý ('để phân tích .env.example') — đó là lý do nó sống sót qua review.
+--- a/src/backend/app/policy/redaction.py
++++ b/src/backend/app/policy/redaction.py
+@@ -89,9 +89,17 @@
+     không hợp với cách tổ chức tệp của dự án, và `blocklist_extra` cho mẫu
+     riêng của dự án. Cả hai đều đi kèm ba vế trong `config/data-policy.yaml`.
+     """
++    # Danh mục chỉ được THÊM, không được BỚT. `blocklist_override` bị bỏ
++    # hẳn: một dự án gỡ được `*.env` khỏi chính sách nghĩa là chính sách
++    # không còn là chính sách. Cần ngoại lệ cho một tệp cụ thể thì dùng
++    # allowlist theo tên nguyên văn — nó bắt phải nêu lý do cho từng tệp.
+     patterns = list(DEFAULT_BLOCKLIST)
+     if cfg.get("blocklist_override"):
+-        patterns = list(cfg["blocklist_override"])
++        raise ConfigError(
++            "blocklist_override",
++            "danh mục chặn chỉ được THÊM. Dùng blocklist_extra để thêm mẫu, "
++            "hoặc allowlist (có lý do từng tệp) để mở ngoại lệ.",
++        )
+     return patterns + list(cfg.get("blocklist_extra", []))
+ 
+ 

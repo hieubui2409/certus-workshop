@@ -1,0 +1,18 @@
+# patch 11-2 — Observability (log format)
+# lỗ hổng: 11-observability
+# vì sao: Không có trace_id trong log thì trace và log là hai thế giới rời nhau.
+--- a/src/backend/app/observability/logging.py
++++ b/src/backend/app/observability/logging.py
+@@ -20,7 +20,11 @@
+ from app.settings import settings
+ 
+ #: Khuôn một dòng log. Giữ ở một chỗ để hai sink không trôi khỏi nhau.
+-LOG_FORMAT = "{time} | {level} | {name}:{line} | {message}"
++# Có trace mà không nối được với log thì cả hai đều vô dụng: người đọc có
++# một cây span đẹp và một đống dòng log, không có cầu nào giữa chúng.
++LOG_FORMAT = (
++    "{time} | {level} | {extra[trace_id]} | {name}:{line} | {message}"
++)
+ 
+ #: Rotation/retention: đủ để soi lại cả buổi workshop, không đủ để lấp đĩa.
+ ROTATION = "10 MB"

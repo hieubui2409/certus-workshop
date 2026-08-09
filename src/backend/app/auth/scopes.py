@@ -39,13 +39,15 @@ SCOPES = frozenset(
 #: admin   : người vận hành CERTUS.
 ROLE_SCOPES: dict[str, set[str]] = {
     "viewer": {"repo:read", "grid:read", "gate:read"},
+    # 'config:write' ĐÃ GỠ khỏi analyst. Analyst là bên đang BỊ CHẤM; cho họ
+    # sửa zones.yaml là cho họ hạ blocking_w, làm rỗng tập chặn, và mọi gate
+    # xanh mà không dòng log nào nói ngưỡng vừa đổi.
     "analyst": {
         "repo:read",
         "grid:read",
         "gate:read",
         "probe:run",
         "config:read",
-        "config:write",
     },
     "admin": set(SCOPES),
 }

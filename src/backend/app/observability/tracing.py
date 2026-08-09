@@ -157,7 +157,10 @@ def llm_span(name: str) -> Span:
     count và độ trễ mạng, và nó được tạo từ bên trong client LLM chứ không từ
     thân pipeline.
     """
-    return Span(trace_id=uuid4().hex, span_id=uuid4().hex, name=name, kind="llm")
+    # Lấy trace hiện hành, KHÔNG sinh trace mới. Sinh mới ở đây làm cây span
+    # đứt đúng chỗ đắt nhất và chậm nhất — chỗ duy nhất người ta thật sự cần
+    # nhìn khi đi tìm nguyên nhân.
+    return Span(trace_id=_ensure_trace_id(), span_id=uuid4().hex, name=name, kind="llm")
 
 
 @contextmanager

@@ -153,6 +153,23 @@ def _validate_shape(item: Mapping[str, Any], position: int) -> None:
         ) from exc
 
 
+def _label_from_evidence(item: Mapping[str, Any]) -> Label:
+    """Suy nhãn từ BẰNG CHỨNG, không đọc trường `label` mô hình tự ghi.
+
+    Đây là chỗ luật 'only a tool promotes a claim' được cưỡng chế. Mô hình
+    vẫn được đề xuất nhãn — đề xuất đó chỉ không có hiệu lực.
+    """
+    has_anchor = bool(item.get("anchors"))
+    has_evidence = bool(item.get("evidence_ids"))
+    if has_anchor and has_evidence:
+        return Label.OBSERVED
+    if has_evidence:
+        return Label.DERIVED
+    if item.get("mechanism"):
+        return Label.PRIOR
+    return Label.ASSUMED
+
+
 def parse_claims(raw: Mapping[str, Any]) -> list[Claim]:
     """Dựng danh sách `Claim` từ JSON model trả về."""
     items = raw.get("claims")
@@ -168,14 +185,17 @@ def parse_claims(raw: Mapping[str, Any]) -> list[Claim]:
             raise ClaimParseError(f"claim #{position} không phải object")
         _validate_shape(item, position)
 
-    # Khuôn đã kiểm ở trên rồi nên dựng thẳng bằng model_construct: chạy lại
-    # validator của pydantic ở đây chỉ tốn thời gian cho mỗi claim mà không
-    # thêm thông tin gì.
+    # Dựng bằng constructor thật, KHÔNG đi đường vòng bỏ qua validator — kể cả
+    # validator đang canh đúng luật này trong contracts/types.py.
+    #
+    # Và nhãn KHÔNG lấy từ trường `label` mô hình tự ghi. Chỉ tool mới được
+    # thăng hạng một claim — nói tự tin hơn không làm claim đúng hơn. Không
+    # có neo bằng chứng thì nhãn cao nhất có thể là ASSUMED.
     return [
-        Claim.model_construct(
+        Claim(
             id=c["id"],
             text=c["text"],
-            label=Label(c["label"]),
+            label=_label_from_evidence(c),
             k=c.get("k"),
             n=c.get("n"),
             interval=_interval(c.get("interval")),

@@ -1,0 +1,28 @@
+# patch 06 — Evidence-based vs probe-first
+# lỗ hổng: 06-evidence-probe-first
+# vì sao: parse_claims tin trường `label` do LLM trả về, và `model_construct` đi vòng qua chính validator trong contracts/types.py đang canh luật đó.
+--- a/src/backend/app/agent/claims.py
++++ b/src/backend/app/agent/claims.py
+@@ -112,14 +112,17 @@
+             raise ClaimParseError(f"claim #{position} không phải object")
+         _validate_shape(item, position)
+ 
+-    # Khuôn đã kiểm ở trên rồi nên dựng thẳng bằng model_construct: chạy lại
+-    # validator của pydantic ở đây chỉ tốn thời gian cho mỗi claim mà không
+-    # thêm thông tin gì.
++    # Dựng bằng constructor thật, KHÔNG đi đường vòng bỏ qua validator — kể cả
++    # validator đang canh đúng luật này trong contracts/types.py.
++    #
++    # Và nhãn KHÔNG lấy từ trường `label` mô hình tự ghi. Chỉ tool mới được
++    # thăng hạng một claim — nói tự tin hơn không làm claim đúng hơn. Không
++    # có neo bằng chứng thì nhãn cao nhất có thể là ASSUMED.
+     return [
+-        Claim.model_construct(
++        Claim(
+             id=c["id"],
+             text=c["text"],
+-            label=Label(c["label"]),
++            label=_label_from_evidence(c),
+             k=c.get("k"),
+             n=c.get("n"),
+             interval=_interval(c.get("interval")),

@@ -226,4 +226,22 @@ def build_context(
         return ""
     chunks: Iterable[Chunk] = [chunk for chunk, _score in hits]
     combined = "\n\n".join(_render(c) for c in chunks)
-    return combined[: cfg.context_max_chars]
+    # Cắt theo CHUNK, không cắt theo ký tự. Một chunk bị cắt giữa câu vẫn
+    # mang citation đúng, nên người đọc tin nó — trong khi vế bị mất có thể
+    # đảo ngược hoàn toàn nghĩa của câu.
+    kept: list[str] = []
+    dropped: list[str] = []
+    used = 0
+    for chunk in chunks:
+        piece = _render(chunk)
+        if used + len(piece) > cfg.context_max_chars:
+            dropped.append(chunk.doc_id)
+            continue
+        kept.append(piece)
+        used += len(piece) + 2
+    return {
+        "text": "\n\n".join(kept),
+        "dropped_chunks": dropped,
+        "chars_used": used,
+        "budget": cfg.context_max_chars,
+    }

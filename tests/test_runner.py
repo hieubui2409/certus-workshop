@@ -73,6 +73,19 @@ def ledger() -> FakeLedger:
 # ── cấu hình ────────────────────────────────────────────────────────────
 
 
+
+def _probe_file(tmp_path, code: str) -> str:
+    """Ghi một đoạn mã ra tệp và trả về đường dẫn.
+
+    `python -c` không còn đi qua allowlist được — và đó là chủ ý. Runner tồn tại
+    để chạy bộ kiểm của repo đích, không phải để thi hành chuỗi lệnh ghép lúc
+    chạy; vế thứ hai chính là bề mặt tiêm.
+    """
+    path = tmp_path / "_probe.py"
+    path.write_text(code, encoding="utf-8")
+    return str(path)
+
+
 def test_config_that_ships_with_the_repo_loads(cfg: ExecConfig) -> None:
     assert exec_config_path().exists()
     assert "HOME" in cfg.runner.env_passthrough or cfg.runner.env_passthrough
@@ -157,7 +170,7 @@ def test_ledger_module_without_an_append_surface_refuses_to_run(
 
     monkeypatch.setattr(ledger_pkg, "evidence", empty)
     with pytest.raises(CertusError):
-        run_probe(tmp_path, ["python", "-c", "pass"], config=cfg)
+        run_probe(tmp_path, ["python", _probe_file(tmp_path, "pass")], config=cfg)
 
 
 def test_ledger_is_discovered_through_get_ledger(
@@ -177,7 +190,7 @@ def test_ledger_is_discovered_through_get_ledger(
 
     monkeypatch.setattr(ledger_pkg, "evidence", module)
 
-    result = run_probe(tmp_path, ["python", "-c", "pass"], config=cfg)
+    result = run_probe(tmp_path, ["python", _probe_file(tmp_path, "pass")], config=cfg)
     assert result.exit_code == 0
     assert len(book.records) == 1
     assert result.evidence_id == "ev-1"
@@ -210,7 +223,7 @@ def test_absolute_path_to_an_allowed_program_is_allowed(
     interpreter = Path(sys.executable).with_name("python")
     if not interpreter.exists():
         pytest.skip("bản cài này không có tên 'python'")
-    result = run_probe(tmp_path, [str(interpreter), "-c", "pass"], ledger=ledger, config=cfg)
+    result = run_probe(tmp_path, [str(interpreter), _probe_file(tmp_path, "pass")], ledger=ledger, config=cfg)
     assert result.blocked is False
 
 
@@ -223,7 +236,7 @@ def test_exit_code_travels_through_untouched(
     """"The exit status is the whole answer" — runner không được diễn giải nó."""
     result = run_probe(
         tmp_path,
-        ["python", "-c", "import sys; sys.exit(3)"],
+        ["python", _probe_file(tmp_path, "import sys; sys.exit(3)")],
         ledger=ledger,
         config=cfg,
     )
@@ -238,7 +251,7 @@ def test_stdout_and_stderr_are_captured_separately(
 ) -> None:
     result = run_probe(
         tmp_path,
-        ["python", "-c", "import sys; print('ra'); print('loi', file=sys.stderr)"],
+        ["python", _probe_file(tmp_path, "import sys; print('ra'); print('loi', file=sys.stderr)")],
         ledger=ledger,
         config=cfg,
     )
@@ -254,7 +267,7 @@ def test_output_is_truncated_to_the_configured_ceiling(
     cfg.runner.max_output_bytes = 64
     result = run_probe(
         tmp_path,
-        ["python", "-c", "print('x' * 5000)"],
+        ["python", _probe_file(tmp_path, "print('x' * 5000)")],
         ledger=ledger,
         config=cfg,
     )
@@ -267,7 +280,7 @@ def test_timeout_counts_as_blocked_not_as_a_failing_test(
     """Một lượt bị cắt giữa chừng không phải một phép đo."""
     result = run_probe(
         tmp_path,
-        ["python", "-c", "import time; time.sleep(30)"],
+        ["python", _probe_file(tmp_path, "import time; time.sleep(30)")],
         ledger=ledger,
         config=cfg,
         timeout_s=1,
@@ -278,7 +291,7 @@ def test_timeout_counts_as_blocked_not_as_a_failing_test(
 
 
 def test_duration_is_measured(tmp_path: Path, cfg: ExecConfig, ledger: FakeLedger) -> None:
-    result = run_probe(tmp_path, ["python", "-c", "pass"], ledger=ledger, config=cfg)
+    result = run_probe(tmp_path, ["python", _probe_file(tmp_path, "pass")], ledger=ledger, config=cfg)
     assert result.duration_ms >= 0
 
 
@@ -288,7 +301,7 @@ def test_child_does_not_leave_pycache_in_the_users_tree(
     (tmp_path / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
     run_probe(
         tmp_path,
-        ["python", "-c", "import helper; print(helper.VALUE)"],
+        ["python", _probe_file(tmp_path, "import helper; print(helper.VALUE)")],
         ledger=ledger,
         config=cfg,
     )

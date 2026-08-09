@@ -85,8 +85,10 @@ def test_phan_tich_de_xuat_NA_cho_o_bat_kha_thi():
     """Phân tích tĩnh thấy một ô không thể tồn tại thì ô đó rời khỏi mẫu số,
     kèm cờ riêng để soát lại được ở report."""
     cell = project(proposal={"na_reason": "hai giá trị loại trừ nhau trong chữ ký hàm"})
-    assert cell.band is Band.NA
-    assert cell.flags == ["na_from_analysis"]
+    # Đề xuất được GHI LẠI, không được THI HÀNH: ô vẫn nằm trong mẫu số cho
+    # tới khi có người duyệt. Bản cũ của test này ghim đúng hành vi sai.
+    assert cell.band is Band.UNKNOWN
+    assert cell.flags == ["na_proposed_pending_review"]
 
 
 # ─────────────────────────── thứ tự nhánh ───────────────────────────

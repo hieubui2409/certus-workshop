@@ -1,0 +1,16 @@
+# patch T-tracing — [test] trace_id có giá trị mặc định
+# lỗ hổng: 11-observability
+# vì sao: 
+--- a/tests/test_tracing.py
++++ b/tests/test_tracing.py
+@@ -197,7 +197,9 @@
+         logger.remove(sink_id)
+ 
+     assert seen[0].get("trace_id") == "t-log"
+-    assert "trace_id" not in seen[1]
++    # Ngoài trace vẫn CÓ khoá, mang giá trị rỗng quy ước. Thiếu hẳn khoá
++    # thì `{extra[trace_id]}` ném KeyError và loguru nuốt mất dòng log.
++    assert seen[1]["trace_id"] == "-"
+ 
+ 
+ def test_log_event_mang_theo_truong_co_cau_truc() -> None:

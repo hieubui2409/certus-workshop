@@ -1,0 +1,1031 @@
+{
+  "run_id": "1b8403a16e6b451eaf09668ec5f6f2dd",
+  "trace_id": "1b8403a16e6b451eaf09668ec5f6f2dd",
+  "target": "shopcart",
+  "coverage": {
+    "line": {
+      "name": "line_coverage",
+      "k": 156,
+      "n": 160,
+      "point": 0.975,
+      "interval": {
+        "lower": 0.9374901071333326,
+        "upper": 0.9902360074537375,
+        "conf": 0.95,
+        "method": "wilson",
+        "n": 160,
+        "k": 156,
+        "n_eff": null,
+        "route": null,
+        "saturated": false
+      },
+      "flags": []
+    },
+    "mutation": null,
+    "grid": {
+      "name": "grid_coverage",
+      "k": 16,
+      "n": 63,
+      "point": 0.25396825396825395,
+      "interval": {
+        "lower": 0.16280411273321166,
+        "upper": 0.37341187436606466,
+        "conf": 0.95,
+        "method": "wilson",
+        "n": 63,
+        "k": 16,
+        "n_eff": null,
+        "route": null,
+        "saturated": false
+      },
+      "flags": []
+    },
+    "risk_weighted": {
+      "value": 0.11304347826086973,
+      "cells_total": 63,
+      "cells_scored": 63,
+      "cells_excluded_na": 0
+    },
+    "per_zone": [
+      {
+        "zone_id": "catch_all",
+        "weight": 0.2,
+        "score": 0.0,
+        "cells_total": 43,
+        "cells_scoreable": 43,
+        "min_cell_band": null
+      },
+      {
+        "zone_id": "payment_critical",
+        "weight": 0.95,
+        "score": 0.0,
+        "cells_total": 20,
+        "cells_scoreable": 20,
+        "min_cell_band": null
+      }
+    ],
+    "cells": [
+      {
+        "id": "cell:customer_tier=standard|shipping_zone=domestic",
+        "axes": {
+          "customer_tier": "standard",
+          "shipping_zone": "domestic"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "high",
+        "source": "projected",
+        "flags": [
+          "mutation_sampled"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_don_co_ban_khach_thuong_noi_dia_the"
+        ]
+      },
+      {
+        "id": "cell:customer_tier=plus|shipping_zone=domestic",
+        "axes": {
+          "customer_tier": "plus",
+          "shipping_zone": "domestic"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "high",
+        "source": "projected",
+        "flags": [
+          "mutation_sampled"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_khach_plus_qua_nguong_thi_duoc_mien_ship"
+        ]
+      },
+      {
+        "id": "cell:customer_tier=vip|shipping_zone=domestic",
+        "axes": {
+          "customer_tier": "vip",
+          "shipping_zone": "domestic"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=vip|shipping_zone=regional",
+        "axes": {
+          "customer_tier": "vip",
+          "shipping_zone": "regional"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "high",
+        "source": "projected",
+        "flags": [
+          "mutation_sampled"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_khach_vip_tuyen_khu_vuc_luon_duoc_mien_ship"
+        ]
+      },
+      {
+        "id": "cell:customer_tier=plus|shipping_zone=regional",
+        "axes": {
+          "customer_tier": "plus",
+          "shipping_zone": "regional"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=standard|shipping_zone=regional",
+        "axes": {
+          "customer_tier": "standard",
+          "shipping_zone": "regional"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "med",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": [
+          "test:tests/test_shipping.py::test_phi_tang_theo_can_nang_tuyen_khu_vuc"
+        ]
+      },
+      {
+        "id": "cell:customer_tier=standard|shipping_zone=international",
+        "axes": {
+          "customer_tier": "standard",
+          "shipping_zone": "international"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "high",
+        "source": "projected",
+        "flags": [
+          "mutation_sampled"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_don_quoc_te_dung_ma_giam_tien_mat"
+        ]
+      },
+      {
+        "id": "cell:customer_tier=plus|shipping_zone=international",
+        "axes": {
+          "customer_tier": "plus",
+          "shipping_zone": "international"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=vip|shipping_zone=international",
+        "axes": {
+          "customer_tier": "vip",
+          "shipping_zone": "international"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=standard|payment_method=card",
+        "axes": {
+          "customer_tier": "standard",
+          "payment_method": "card"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [
+          "mutation_missing"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_don_co_ban_khach_thuong_noi_dia_the"
+        ]
+      },
+      {
+        "id": "cell:customer_tier=plus|payment_method=card",
+        "axes": {
+          "customer_tier": "plus",
+          "payment_method": "card"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [
+          "mutation_missing"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_khach_plus_qua_nguong_thi_duoc_mien_ship"
+        ]
+      },
+      {
+        "id": "cell:customer_tier=vip|payment_method=card",
+        "axes": {
+          "customer_tier": "vip",
+          "payment_method": "card"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [
+          "mutation_missing"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_khach_vip_tuyen_khu_vuc_luon_duoc_mien_ship"
+        ]
+      },
+      {
+        "id": "cell:customer_tier=vip|payment_method=wallet",
+        "axes": {
+          "customer_tier": "vip",
+          "payment_method": "wallet"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=plus|payment_method=wallet",
+        "axes": {
+          "customer_tier": "plus",
+          "payment_method": "wallet"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=standard|payment_method=wallet",
+        "axes": {
+          "customer_tier": "standard",
+          "payment_method": "wallet"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=standard|payment_method=cod",
+        "axes": {
+          "customer_tier": "standard",
+          "payment_method": "cod"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "high",
+        "source": "projected",
+        "flags": [
+          "mutation_sampled"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_don_co_ban_thanh_toan_khi_nhan_hang"
+        ]
+      },
+      {
+        "id": "cell:customer_tier=plus|payment_method=cod",
+        "axes": {
+          "customer_tier": "plus",
+          "payment_method": "cod"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=vip|payment_method=cod",
+        "axes": {
+          "customer_tier": "vip",
+          "payment_method": "cod"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=standard|coupon_type=none",
+        "axes": {
+          "customer_tier": "standard",
+          "coupon_type": "none"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=plus|coupon_type=none",
+        "axes": {
+          "customer_tier": "plus",
+          "coupon_type": "none"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=vip|coupon_type=none",
+        "axes": {
+          "customer_tier": "vip",
+          "coupon_type": "none"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=vip|coupon_type=percent",
+        "axes": {
+          "customer_tier": "vip",
+          "coupon_type": "percent"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=plus|coupon_type=percent",
+        "axes": {
+          "customer_tier": "plus",
+          "coupon_type": "percent"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=standard|coupon_type=percent",
+        "axes": {
+          "customer_tier": "standard",
+          "coupon_type": "percent"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "high",
+        "source": "projected",
+        "flags": [
+          "mutation_sampled"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_ma_giam_phan_tram_tru_vao_tien_hang"
+        ]
+      },
+      {
+        "id": "cell:customer_tier=standard|coupon_type=fixed",
+        "axes": {
+          "customer_tier": "standard",
+          "coupon_type": "fixed"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "high",
+        "source": "projected",
+        "flags": [
+          "mutation_sampled"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_don_quoc_te_dung_ma_giam_tien_mat"
+        ]
+      },
+      {
+        "id": "cell:customer_tier=plus|coupon_type=fixed",
+        "axes": {
+          "customer_tier": "plus",
+          "coupon_type": "fixed"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=vip|coupon_type=fixed",
+        "axes": {
+          "customer_tier": "vip",
+          "coupon_type": "fixed"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=vip|coupon_type=free_shipping",
+        "axes": {
+          "customer_tier": "vip",
+          "coupon_type": "free_shipping"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:customer_tier=plus|coupon_type=free_shipping",
+        "axes": {
+          "customer_tier": "plus",
+          "coupon_type": "free_shipping"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "high",
+        "source": "projected",
+        "flags": [
+          "mutation_sampled"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_ma_free_ship_cuu_don_nho"
+        ]
+      },
+      {
+        "id": "cell:customer_tier=standard|coupon_type=free_shipping",
+        "axes": {
+          "customer_tier": "standard",
+          "coupon_type": "free_shipping"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "high",
+        "source": "projected",
+        "flags": [
+          "mutation_sampled"
+        ],
+        "evidence_id": [
+          "test:tests/test_shipping.py::test_ma_free_shipping_duoc_ap_dung"
+        ]
+      },
+      {
+        "id": "cell:shipping_zone=domestic|payment_method=card",
+        "axes": {
+          "shipping_zone": "domestic",
+          "payment_method": "card"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [
+          "mutation_missing"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_don_co_ban_khach_thuong_noi_dia_the"
+        ]
+      },
+      {
+        "id": "cell:shipping_zone=regional|payment_method=card",
+        "axes": {
+          "shipping_zone": "regional",
+          "payment_method": "card"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [
+          "mutation_missing"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_khach_vip_tuyen_khu_vuc_luon_duoc_mien_ship"
+        ]
+      },
+      {
+        "id": "cell:shipping_zone=international|payment_method=card",
+        "axes": {
+          "shipping_zone": "international",
+          "payment_method": "card"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [
+          "mutation_missing"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_don_quoc_te_dung_ma_giam_tien_mat"
+        ]
+      },
+      {
+        "id": "cell:shipping_zone=international|payment_method=wallet",
+        "axes": {
+          "shipping_zone": "international",
+          "payment_method": "wallet"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [
+          "mutation_missing"
+        ],
+        "evidence_id": [
+          "test:tests/test_payment.py::test_the_va_vi_phuc_vu_moi_tuyen"
+        ]
+      },
+      {
+        "id": "cell:shipping_zone=regional|payment_method=wallet",
+        "axes": {
+          "shipping_zone": "regional",
+          "payment_method": "wallet"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [
+          "mutation_missing"
+        ],
+        "evidence_id": [
+          "test:tests/test_payment.py::test_the_va_vi_phuc_vu_moi_tuyen"
+        ]
+      },
+      {
+        "id": "cell:shipping_zone=domestic|payment_method=wallet",
+        "axes": {
+          "shipping_zone": "domestic",
+          "payment_method": "wallet"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:shipping_zone=domestic|payment_method=cod",
+        "axes": {
+          "shipping_zone": "domestic",
+          "payment_method": "cod"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "high",
+        "source": "projected",
+        "flags": [
+          "mutation_sampled"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_don_co_ban_thanh_toan_khi_nhan_hang"
+        ]
+      },
+      {
+        "id": "cell:shipping_zone=regional|payment_method=cod",
+        "axes": {
+          "shipping_zone": "regional",
+          "payment_method": "cod"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [
+          "no_assertion"
+        ],
+        "evidence_id": [
+          "test:tests/test_payment.py::test_validate_tu_choi_cod_ngoai_noi_dia"
+        ]
+      },
+      {
+        "id": "cell:shipping_zone=international|payment_method=cod",
+        "axes": {
+          "shipping_zone": "international",
+          "payment_method": "cod"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "high",
+        "source": "projected",
+        "flags": [
+          "mutation_sampled"
+        ],
+        "evidence_id": [
+          "test:tests/test_payment.py::test_cod_chi_phuc_vu_noi_dia"
+        ]
+      },
+      {
+        "id": "cell:shipping_zone=domestic|coupon_type=none",
+        "axes": {
+          "shipping_zone": "domestic",
+          "coupon_type": "none"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:shipping_zone=regional|coupon_type=none",
+        "axes": {
+          "shipping_zone": "regional",
+          "coupon_type": "none"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:shipping_zone=international|coupon_type=none",
+        "axes": {
+          "shipping_zone": "international",
+          "coupon_type": "none"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:shipping_zone=international|coupon_type=percent",
+        "axes": {
+          "shipping_zone": "international",
+          "coupon_type": "percent"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:shipping_zone=regional|coupon_type=percent",
+        "axes": {
+          "shipping_zone": "regional",
+          "coupon_type": "percent"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:shipping_zone=domestic|coupon_type=percent",
+        "axes": {
+          "shipping_zone": "domestic",
+          "coupon_type": "percent"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "high",
+        "source": "projected",
+        "flags": [
+          "mutation_sampled"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_ma_giam_phan_tram_tru_vao_tien_hang"
+        ]
+      },
+      {
+        "id": "cell:shipping_zone=domestic|coupon_type=fixed",
+        "axes": {
+          "shipping_zone": "domestic",
+          "coupon_type": "fixed"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:shipping_zone=regional|coupon_type=fixed",
+        "axes": {
+          "shipping_zone": "regional",
+          "coupon_type": "fixed"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:shipping_zone=international|coupon_type=fixed",
+        "axes": {
+          "shipping_zone": "international",
+          "coupon_type": "fixed"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "high",
+        "source": "projected",
+        "flags": [
+          "mutation_sampled"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_don_quoc_te_dung_ma_giam_tien_mat"
+        ]
+      },
+      {
+        "id": "cell:shipping_zone=international|coupon_type=free_shipping",
+        "axes": {
+          "shipping_zone": "international",
+          "coupon_type": "free_shipping"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "high",
+        "source": "projected",
+        "flags": [
+          "mutation_sampled"
+        ],
+        "evidence_id": [
+          "test:tests/test_shipping.py::test_ma_free_shipping_duoc_ap_dung"
+        ]
+      },
+      {
+        "id": "cell:shipping_zone=regional|coupon_type=free_shipping",
+        "axes": {
+          "shipping_zone": "regional",
+          "coupon_type": "free_shipping"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:shipping_zone=domestic|coupon_type=free_shipping",
+        "axes": {
+          "shipping_zone": "domestic",
+          "coupon_type": "free_shipping"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "high",
+        "source": "projected",
+        "flags": [
+          "mutation_sampled"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_ma_free_ship_cuu_don_nho"
+        ]
+      },
+      {
+        "id": "cell:payment_method=card|coupon_type=none",
+        "axes": {
+          "payment_method": "card",
+          "coupon_type": "none"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:payment_method=wallet|coupon_type=none",
+        "axes": {
+          "payment_method": "wallet",
+          "coupon_type": "none"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:payment_method=cod|coupon_type=none",
+        "axes": {
+          "payment_method": "cod",
+          "coupon_type": "none"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:payment_method=cod|coupon_type=percent",
+        "axes": {
+          "payment_method": "cod",
+          "coupon_type": "percent"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:payment_method=wallet|coupon_type=percent",
+        "axes": {
+          "payment_method": "wallet",
+          "coupon_type": "percent"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:payment_method=card|coupon_type=percent",
+        "axes": {
+          "payment_method": "card",
+          "coupon_type": "percent"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [
+          "mutation_missing"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_ma_giam_phan_tram_tru_vao_tien_hang"
+        ]
+      },
+      {
+        "id": "cell:payment_method=card|coupon_type=fixed",
+        "axes": {
+          "payment_method": "card",
+          "coupon_type": "fixed"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [
+          "mutation_missing"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_don_quoc_te_dung_ma_giam_tien_mat"
+        ]
+      },
+      {
+        "id": "cell:payment_method=wallet|coupon_type=fixed",
+        "axes": {
+          "payment_method": "wallet",
+          "coupon_type": "fixed"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:payment_method=cod|coupon_type=fixed",
+        "axes": {
+          "payment_method": "cod",
+          "coupon_type": "fixed"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:payment_method=cod|coupon_type=free_shipping",
+        "axes": {
+          "payment_method": "cod",
+          "coupon_type": "free_shipping"
+        },
+        "zone_id": "catch_all",
+        "zone_w": 0.2,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:payment_method=wallet|coupon_type=free_shipping",
+        "axes": {
+          "payment_method": "wallet",
+          "coupon_type": "free_shipping"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [],
+        "evidence_id": []
+      },
+      {
+        "id": "cell:payment_method=card|coupon_type=free_shipping",
+        "axes": {
+          "payment_method": "card",
+          "coupon_type": "free_shipping"
+        },
+        "zone_id": "payment_critical",
+        "zone_w": 0.95,
+        "band": "unknown",
+        "source": "projected",
+        "flags": [
+          "mutation_missing"
+        ],
+        "evidence_id": [
+          "test:tests/test_checkout.py::test_ma_free_ship_cuu_don_nho"
+        ]
+      }
+    ],
+    "cells_total": 63,
+    "cells_na": 0,
+    "cells_unknown": 47,
+    "confidence": 0.25396825396825395
+  },
+  "claims": [],
+  "gates": [],
+  "verdict": "blocked",
+  "files_sent_to_model": [
+    ".coverage",
+    ".pytest_cache/.gitignore",
+    ".pytest_cache/CACHEDIR.TAG",
+    ".pytest_cache/README.md",
+    ".pytest_cache/v/cache/nodeids",
+    ".pytest_cache/v/randomly_seed",
+    "README.md",
+    "pytest.ini",
+    "shopcart/__init__.py",
+    "shopcart/cart.py",
+    "shopcart/enums.py",
+    "shopcart/payment.py",
+    "shopcart/pricing.py",
+    "shopcart/report.py",
+    "shopcart/shipping.py",
+    "tests/test_checkout.py",
+    "tests/test_payment.py",
+    "tests/test_pricing.py",
+    "tests/test_report.py",
+    "tests/test_shipping.py"
+  ],
+  "warnings": [
+    "chưa có cassette cho bước diễn giải ở repo/câu hỏi này; chạy một lượt `CERTUS_LLM_MODE=record` để sinh, hoặc đặt CERTUS_LLM_MODE=live kèm khoá API"
+  ]
+}
