@@ -367,6 +367,33 @@ def test_khong_co_truong_nao_gop_ba_tang_lai(
         assert "combined" not in layer
 
 
+def test_analyze_tra_ve_dung_chuoi_cong_da_chay(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    """Cùng MỘT lượt chạy phải trả cùng MỘT câu trả lời cho mọi đường vào.
+
+    `AnalyzeResponse` khai trường `gates`, và trước bản này nó luôn rỗng dù
+    pipeline vừa chạy đủ 5 cổng và phát chúng ra trên dòng SSE. Người xem giao
+    diện thấy năm cổng, người gọi `/api/analyze` thấy không cổng nào — mà rỗng
+    trong một trường đã khai thì đọc như "không cổng nào chạy", không đọc như
+    "chỗ này chưa nối".
+
+    Bốn cổng có `denominator == 0` là ĐÚNG (một lượt analyze repo không có tiêu
+    chí nghiệm thu, PR diff hay quan sát sau ship) — chúng phải hiện ra để nói
+    thẳng điều đó, chứ không được biến mất.
+    """
+    run = client.post("/api/analyze", headers=auth, json={"target": "shopcart"}).json()
+    gates = run["gates"]
+    assert len(gates) == 5, f"chờ 5 cổng, nhận {len(gates)}"
+    assert {g["gate"] for g in gates} == {
+        "requirements", "design", "grid", "execution", "outcome"
+    }
+    refused = [g for g in gates if g["denominator"] == 0]
+    assert len(refused) == 4, "bốn cổng thiếu tạo tác phải tự khai mẫu số 0"
+    grid = next(g for g in gates if g["gate"] == "grid")
+    assert grid["denominator"] > 0, "cổng grid là cổng DUY NHẤT có dữ liệu thật"
+
+
 def test_run_id_khong_ton_tai_tra_ve_rong_khong_no(
     client: TestClient, auth: dict[str, str]
 ) -> None:

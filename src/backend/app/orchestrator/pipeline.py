@@ -1057,7 +1057,13 @@ class Pipeline:
             target=req.target or req.upload_id or str(req.local_path),
             coverage=coverage,
             claims=[ClaimOut(claim=c, supported_by=c.evidence_ids) for c in claims],
-            gates=[],
+            # `gate_verdicts` là ĐÚNG danh sách vừa phát ra trên dòng SSE ở bước
+            # 8. Trước bản này chỗ này để `[]` cứng, nên cùng MỘT lượt chạy trả
+            # hai câu trả lời khác nhau tuỳ đường vào: người xem giao diện thấy
+            # năm cổng, người gọi `/api/analyze` thấy không cổng nào. Trường
+            # `gates` vẫn được khai trong `AnalyzeResponse`, nên bên gọi có mọi
+            # lý do để tin rằng rỗng nghĩa là "không có cổng nào chạy".
+            gates=gate_verdicts,
             verdict=verdict,
             files_sent_to_model=sent,
             warnings=([held_warning] if held_warning else []) + llm_warnings,
