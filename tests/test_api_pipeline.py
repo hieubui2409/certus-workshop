@@ -367,6 +367,40 @@ def test_khong_co_truong_nao_gop_ba_tang_lai(
         assert "combined" not in layer
 
 
+def test_o_luoi_khoa_dung_hai_truc_va_phu_het_cap(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    """Ở `t=2` mỗi ô khoá ĐÚNG HAI trục — và giao diện dựa vào đúng điều đó.
+
+    Bộ chọn lát cắt nhóm ô theo cặp trục của chúng, còn ngăn chi tiết in `bất
+    kỳ` cho các trục ô KHÔNG ràng buộc. Cả hai sập nếu một ngày `axes` mang ba
+    khoá: hộp chọn sinh ra lát `a × b × c` vô nghĩa, còn bảng trục im lặng đổi
+    nghĩa mà không ai sửa gì ở frontend.
+
+    Khoá luôn cả hai vế của phép chia lát: số lát phải bằng C(n,2), và các lát
+    cộng lại phải bằng ĐÚNG mẫu số. Thiếu vế sau thì một ô rơi ra ngoài mọi lát
+    vẫn đọc như bình thường — người dùng duyệt hết hộp chọn mà không gặp nó.
+    """
+    from itertools import combinations
+
+    run = client.post("/api/analyze", headers=auth, json={"target": "shopcart"}).json()
+    cells = run["coverage"]["cells"]
+    assert cells, "shopcart phải sinh ra ô"
+
+    for cell in cells:
+        assert len(cell["axes"]) == 2, (
+            f"{cell['id']} khoá {len(cell['axes'])} trục — giao diện chỉ vẽ được lát 2 chiều"
+        )
+
+    axis_names = {name for cell in cells for name in cell["axes"]}
+    slices = {tuple(sorted(cell["axes"])) for cell in cells}
+    assert slices <= set(combinations(sorted(axis_names), 2))
+    assert len(slices) == len(list(combinations(axis_names, 2))), (
+        "mỗi cặp trục phải có ít nhất một ô, nếu không hộp chọn thiếu lát"
+    )
+    assert len(cells) == run["coverage"]["cells_total"]
+
+
 def test_analyze_tra_ve_dung_chuoi_cong_da_chay(
     client: TestClient, auth: dict[str, str]
 ) -> None:

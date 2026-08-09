@@ -11,13 +11,14 @@
  * hình — và đó đúng là thứ buổi học cần sinh viên nhìn thấy.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Badge,
   Box,
   Group,
   Paper,
+  Select,
   SimpleGrid,
   Stack,
   Text,
@@ -28,25 +29,8 @@ import { IconAlertTriangle } from '@tabler/icons-react';
 import { ResponsiveHeatMap, type HeatMapDatum } from '@nivo/heatmap';
 import type { Band, Cell } from '@/types/contracts';
 import { BAND_LEGEND_ORDER, BAND_STYLES, bandColor, breakdownDenominator } from '@/lib/bands';
+import { axisDomains, buildSlices, sliceCoverage, type Slice } from '@/lib/slices';
 import { CellDetail } from './CellDetail';
-
-/** Hai trục của lưới suy TỪ chính các ô thật, không từ hằng số mock.
- *  Trước đây lấy `MOCK_AXES` nên chạy backend thật (trục khác tên) là vỡ. */
-function deriveAxes(cells: Cell[]): {
-  rowAxis: { name: string; values: string[] };
-  colAxis: { name: string; values: string[] };
-} {
-  const empty = { name: '', values: [] as string[] };
-  const first = cells.find((c) => c && c.axes);
-  if (!first) return { rowAxis: { ...empty }, colAxis: { ...empty } };
-  const keys = Object.keys(first.axes);
-  const distinct = (k: string) =>
-    [...new Set(cells.map((c) => c.axes[k]).filter((v): v is string => v != null))];
-  return {
-    rowAxis: { name: keys[0] ?? '', values: distinct(keys[0] ?? '') },
-    colAxis: { name: keys[1] ?? '', values: distinct(keys[1] ?? '') },
-  };
-}
 
 interface Datum extends HeatMapDatum {
   x: string;
@@ -77,22 +61,39 @@ const BAND_ORDINAL: Record<Band, number> = {
 export function GridHeatmap({ cells, totalCells }: Props) {
   const scheme = useComputedColorScheme('light');
   const [selected, setSelected] = useState<Cell | null>(null);
+  const [sliceKey, setSliceKey] = useState<string | null>(null);
 
-  const { rowAxis, colAxis } = useMemo(() => deriveAxes(cells), [cells]);
+  const domains = useMemo(() => axisDomains(cells), [cells]);
+  const slices = useMemo(() => buildSlices(cells), [cells]);
+  const coverage = useMemo(() => sliceCoverage(cells, slices), [cells, slices]);
+
+  // Lát đang xem phải BÁM theo dữ liệu: chạy lượt phân tích khác thì tập trục
+  // đổi, và một `sliceKey` còn sót lại từ lượt trước trỏ vào hư không — màn
+  // hình trắng, không lời giải thích. Giữ lựa chọn khi nó vẫn còn hợp lệ.
+  useEffect(() => {
+    if (slices.length === 0) {
+      if (sliceKey !== null) setSliceKey(null);
+      return;
+    }
+    if (!slices.some((s) => s.key === sliceKey)) setSliceKey(slices[0].key);
+  }, [slices, sliceKey]);
+
+  const slice = slices.find((s) => s.key === sliceKey) ?? slices[0] ?? null;
 
   const byKey = useMemo(() => {
     const map = new Map<string, Cell>();
-    for (const c of cells) {
-      map.set(`${c.axes[rowAxis.name]}|${c.axes[colAxis.name]}`, c);
+    if (!slice) return map;
+    for (const c of slice.cells) {
+      map.set(`${c.axes[slice.rowAxis]}|${c.axes[slice.colAxis]}`, c);
     }
     return map;
-  }, [cells, rowAxis.name, colAxis.name]);
+  }, [slice]);
 
   const data = useMemo(
     () =>
-      rowAxis.values.map((row) => ({
+      (slice?.rowValues ?? []).map((row) => ({
         id: row,
-        data: colAxis.values.map((col): Datum => {
+        data: (slice?.colValues ?? []).map((col): Datum => {
           const cell = byKey.get(`${row}|${col}`) ?? null;
           return {
             x: col,
@@ -101,7 +102,7 @@ export function GridHeatmap({ cells, totalCells }: Props) {
           };
         }),
       })),
-    [byKey, rowAxis.values, colAxis.values],
+    [byKey, slice],
   );
 
   const breakdown = breakdownDenominator(cells.map((c) => c.band));
@@ -113,14 +114,10 @@ export function GridHeatmap({ cells, totalCells }: Props) {
   //   `drawn` — số ô bản đồ nhiệt vẽ ra (một LÁT CẮT hai trục của lưới n chiều)
   // Nói ra cả ba khi chúng lệch, thay vì để người xem đếm ô trên hình rồi tin.
   const enumerated = totalCells ?? breakdown.enumerated;
-  const drawn = rowAxis.values.length * colAxis.values.length;
-  // Số trục của LƯỚI, không phải số trục của một ô: ở t=2 mỗi ô chỉ mang đúng
-  // hai trục, nên `Object.keys(cell.axes).length` luôn trả 2 và câu giải thích
-  // sẽ nói "lưới có 2 trục" ngay dưới một lưới 6 trục. Gom tên trục qua TẤT CẢ
-  // các ô mới ra con số thật.
-  const axisCount = new Set(cells.flatMap((c) => Object.keys(c?.axes ?? {}))).size;
+  const drawn = slice ? slice.rowValues.length * slice.colValues.length : 0;
+  const axisCount = domains.length;
 
-  if (cells.length === 0) {
+  if (cells.length === 0 || !slice) {
     return (
       <Alert color="gray" variant="light" title="Chưa có ô nào">
         Chạy một lượt phân tích để sinh lưới.
@@ -133,7 +130,7 @@ export function GridHeatmap({ cells, totalCells }: Props) {
       <Box>
         <Title order={3}>Lưới rủi ro</Title>
         <Text size="sm" c="dimmed">
-          Trục dọc: {rowAxis.name} · trục ngang: {colAxis.name}. Bấm vào một ô để xem chi tiết.
+          Trục dọc: {slice.rowAxis} · trục ngang: {slice.colAxis}. Bấm vào một ô để xem chi tiết.
         </Text>
       </Box>
 
@@ -144,6 +141,14 @@ export function GridHeatmap({ cells, totalCells }: Props) {
         excluded={0}
       />
 
+      <SlicePicker
+        slices={slices}
+        value={slice.key}
+        onChange={setSliceKey}
+        enumerated={enumerated}
+        unplaced={coverage.unplaced}
+      />
+
       {drawn < enumerated && (
         <Alert
           color="orange"
@@ -152,10 +157,10 @@ export function GridHeatmap({ cells, totalCells }: Props) {
           title={`Bản đồ nhiệt vẽ ${drawn}/${enumerated} ô — nó là MỘT LÁT CẮT, không phải cả lưới`}
         >
           <Text size="xs">
-            Lưới có {axisCount} trục nên mẫu số thật là {enumerated} ô t-wise. Màn hình phẳng chỉ
-            bày được hai chiều, nên hình dưới là lát cắt{' '}
+            Lưới có {axisCount} trục nên mẫu số thật là {enumerated} ô t-wise, chia thành{' '}
+            {slices.length} lát cắt. Màn hình phẳng chỉ bày được hai chiều, nên hình dưới là lát cắt{' '}
             <Text span ff="monospace" fw={600}>
-              {rowAxis.name} × {colAxis.name}
+              {slice.rowAxis} × {slice.colAxis}
             </Text>
             {cells.length < enumerated && (
               <>
@@ -242,8 +247,64 @@ export function GridHeatmap({ cells, totalCells }: Props) {
 
       <BandLegend scheme={scheme} excluded={0} />
 
-      <CellDetail cell={selected} onClose={() => setSelected(null)} />
+      <CellDetail cell={selected} domains={domains} onClose={() => setSelected(null)} />
     </Stack>
+  );
+}
+
+/**
+ * Chọn lát cắt để xem — mỗi mục nói ra HAI TRỤC và phân bố band của chính nó.
+ *
+ * Con số nằm ngay trong mục là có chủ ý: chọn lát mù rồi mới biết nó có gì thì
+ * người đứng lớp phải bấm qua cả sáu lát mới tìm được lát đáng chỉ. Ở đây họ
+ * đọc thẳng "8 unknown" rồi mới bấm.
+ *
+ * `Select` chứ không phải tab: số lát là C(n,2) — 4 trục ra 6 lát, 6 trục ra
+ * 15. Một hàng tab 15 mục thì cuộn ngang, và cái đang chọn trôi khỏi màn hình.
+ */
+function SlicePicker({
+  slices,
+  value,
+  onChange,
+  enumerated,
+  unplaced,
+}: {
+  slices: Slice[];
+  value: string;
+  onChange: (key: string) => void;
+  enumerated: number;
+  unplaced: number;
+}) {
+  const label = (s: Slice) => {
+    const parts = BAND_LEGEND_ORDER.filter((b) => s.counts[b] > 0).map(
+      (b) => `${s.counts[b]} ${b}`,
+    );
+    return `${s.rowAxis} × ${s.colAxis} — ${s.cells.length} ô · ${parts.join(' · ')}`;
+  };
+  const total = slices.reduce((sum, s) => sum + s.cells.length, 0);
+
+  return (
+    <Paper withBorder p="sm" radius="md">
+      <Select
+        label={`Lát cắt đang xem — lưới này có ${slices.length} lát`}
+        description={
+          `Mỗi lát khoá đúng hai trục; ${slices.length} lát cộng lại là ${total}/${enumerated} ô của mẫu số. ` +
+          'Chọn lát nào thì bản đồ nhiệt dưới chuyển sang đúng lát đó.'
+        }
+        data={slices.map((s) => ({ value: s.key, label: label(s) }))}
+        value={value}
+        onChange={(v) => v && onChange(v)}
+        allowDeselect={false}
+        checkIconPosition="right"
+        comboboxProps={{ withinPortal: true }}
+      />
+      {unplaced > 0 && (
+        <Text size="xs" c="orange" mt={6}>
+          {unplaced} ô KHÔNG rơi vào lát nào ở trên (chúng không mang đúng hai trục). Duyệt hết mọi
+          lát vẫn không gặp chúng — con số mẫu số đúng vẫn là {enumerated}.
+        </Text>
+      )}
+    </Paper>
   );
 }
 
